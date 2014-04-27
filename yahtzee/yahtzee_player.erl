@@ -54,7 +54,17 @@ logged_in(Name, Pwd, TMs, Tournaments, LoginTicket)->
 			logged_in(Name, Pwd, TMs, Tournaments--[Tid], LoginTicket);
 		{play_request, Pid, {Ref, Tid, Gid, RollNum, Dice, ScoreCard, OppScoreCard}}->
 			log("Received roll of ~p on roll ~p in game ~p in tournament ~p. Player has ~p and opponent has ~p.~n", [Dice, RollNum, Gid, Tid, Scorecard, OppScoreCard]),
+			Keepers = choose_keepers(Dice),
+			ScoreCardLine = choose_line(ScoreCard, Dice, Keepers),
+			Pid ! {play_action, self(), {make_ref(), Tid, Gid, RollNum, Keepers, ScoreCardLine}},
 			logged_in(Name, Pwd, TMs, Tournaments, LoginTicket)
 		_ -> 
-			log("Received unknown message")
+			log("Received  unknown message")
 	end.
+
+% NEED TO DO, return list of booleans (true or false atoms)
+choose_keepers([R1, R2, R3, R4, R5])->ok.
+
+% NEED TO DO, return an integer representing a line on the scorecard in
+% which to score the dice.
+choose_line(ScoreCard, Dice, Keepers)->ok.
