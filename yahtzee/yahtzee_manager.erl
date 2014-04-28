@@ -6,10 +6,11 @@
 -module(yahtzee_manager).
 
 -import(shared).
+-import(tournament_manager).
 %% ====================================================================
 %%                             Public API
 %% ====================================================================
--export(main/1).
+-export([main/1]).
 %% ====================================================================
 %%                             Constants
 %% ====================================================================
@@ -36,13 +37,9 @@ manager_begin(Name)->
 	receive
 		% Data is a tuple {num-players, games-per-match}
 		{request_tournament, Pid, {NumPlayers, Gpm}}->
-			start_tournament();
-		{tournament_info, Pid, Data}->.
-
-
-
-
-
-
-
-
+            spawn(fun() ->
+                        tournament_manager:tournament_start([], self())
+                end);
+		{tournament_info, Pid, Data}->
+            shared:log("Tournament info requested by pid ~p", [Pid])
+    end.
