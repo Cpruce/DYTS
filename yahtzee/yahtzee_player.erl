@@ -54,7 +54,7 @@ logged_in(Name, Pwd, TMs, Tournaments, LoginTicket)->
 			logged_in(Name, Pwd, TMs, Tournaments--[Tid], LoginTicket);
 		{play_request, Pid, {Ref, Tid, Gid, RollNum, Dice, ScoreCard, OppScoreCard}}->
 			log("Received roll of ~p on roll ~p in game ~p in tournament ~p. Player has ~p and opponent has ~p.~n", [Dice, RollNum, Gid, Tid, Scorecard, OppScoreCard]),
-			Keepers = choose_keepers(Dice),
+			Keepers = choose_keepers(lists:sort(Dice)),
 			ScoreCardLine = choose_line(ScoreCard, Dice, Keepers),
 			Pid ! {play_action, self(), {make_ref(), Tid, Gid, RollNum, Keepers, ScoreCardLine}},
 			logged_in(Name, Pwd, TMs, Tournaments, LoginTicket)
@@ -62,8 +62,33 @@ logged_in(Name, Pwd, TMs, Tournaments, LoginTicket)->
 			log("Received  unknown message")
 	end.
 
-% NEED TO DO, return list of booleans (true or false atoms)
-choose_keepers([R1, R2, R3, R4, R5])->ok.
+%% NOT FINISHED %% (Also can be used for when the scorecard is updated
+
+% Returns list of booleans (true or false atoms)
+% Assumes that a sorted list was supplied
+choose_keepers([X, X, X, X, X]) -> 
+	% Yahtzee
+	[true, true, true, true, true];
+choose_keepers([A, B, C, D, E]) when E == D + 1 and D == C + 1 and
+		C == B + 1 and B == A + 1 ->
+	% Large Straight
+	[true, true, true, true, true];
+choose_keepers([A, B, C, D, E]) when E == D + 1 and D == C + 1 and
+		C == B + 1 ->
+	% Small Straight, might as well go for the Large Straight
+	[false, true, true, true, true];
+choose_keepers([A, B, C, D, E]) when D == C + 1 and C == B + 1 and 
+		B == A + 1 ->
+	% Small Straight, might as well go for the Large Straight
+	[true, true, true, true, false];	
+choose_keepers([A, A, A, B, B]) -> 
+	% Full House 
+	[true, true, true, true, true];
+choose_keepers([B, B, A, A, A]) ->
+	% Full House
+	[true, true, true, true, true];
+	
+choose_keepers([R1, R2, R3, R4, R5])->.
 
 % NEED TO DO, return an integer representing a line on the scorecard in
 % which to score the dice.
