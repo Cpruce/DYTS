@@ -30,6 +30,7 @@ main(Params)->
         % effectively-unique node name
         net_kernel:start([list_to_atom(Name), shortnames]),
         register(Name, self()),
+	log("node() is ~p~n", [node()]),
 	manager_begin(Name).
 
 % Start tournament of a given size upon request from the environment.
@@ -38,7 +39,7 @@ manager_begin(Name)->
 		% Data is a tuple {num-players, games-per-match}
 		{request_tournament, Pid, {NumPlayers, Gpm}}->
             spawn(fun() ->
-                        tournament_manager:tournament_start([], self())
+				tournament_manager:tournament_start([], node())
                 end);
 		{tournament_info, Pid, Data}->
             shared:log("Tournament info requested by pid ~p", [Pid])

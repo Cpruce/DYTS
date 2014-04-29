@@ -62,33 +62,79 @@ logged_in(Name, Pwd, TMs, Tournaments, LoginTicket)->
 			log("Received  unknown message")
 	end.
 
-%% NOT FINISHED %% (Also can be used for when the scorecard is updated
+%% Modify to be used for when the scorecard is updated
 
 % Returns list of booleans (true or false atoms)
 % Assumes that a sorted list was supplied
 choose_keepers([X, X, X, X, X]) -> 
 	% Yahtzee
+	log("Yahtzee! Keep everything.~n"),
 	[true, true, true, true, true];
 choose_keepers([A, B, C, D, E]) when E == D + 1 and D == C + 1 and
 		C == B + 1 and B == A + 1 ->
 	% Large Straight
+	log("Large straight! Keep everything.~n"),
 	[true, true, true, true, true];
 choose_keepers([A, B, C, D, E]) when E == D + 1 and D == C + 1 and
 		C == B + 1 ->
 	% Small Straight, might as well go for the Large Straight
+	log("Small straight! Keep everything except the first entry.~n"),
 	[false, true, true, true, true];
 choose_keepers([A, B, C, D, E]) when D == C + 1 and C == B + 1 and 
 		B == A + 1 ->
 	% Small Straight, might as well go for the Large Straight
+	log("Small straight! Keep everything except the last entry.~n"),
 	[true, true, true, true, false];	
 choose_keepers([A, A, A, B, B]) -> 
 	% Full House 
+	log("Full house. Keep everything, not worth the risk.~n"),
 	[true, true, true, true, true];
 choose_keepers([B, B, A, A, A]) ->
 	% Full House
+	log("Full house. Keep everything, not worth the risk.~n"),
 	[true, true, true, true, true];
-	
-choose_keepers([R1, R2, R3, R4, R5])->.
+choose_keepers([X, X, X, X, Y]) ->
+	% Four of a Kind, might as well go for the Yahtzee
+	log("Four of a kind. Keep everything except the last entry.~n"),	
+	[true, true, true, true, false];
+choose_keepers([Y, X, X, X, X]) ->
+	% Four of a Kind, might as well go for the Yahtzee
+	log("Four of a kind. Keep everything except the first entry.~n"),	
+	[false, true, true, true, true];
+choose_keepers([X, X, X, Y, Z]) ->
+	% Three of a kind, shoot for four of a kind or Yahtzee
+	log("Three of a kind. Keep everything except the last two entries.~n"),	
+	[true, true, true, false, false];
+choose_keepers([Y, X, X, X, Z]) ->
+	% Three of a kind, shoot for four of a kind or Yahtzee
+	log("Three of a kind. Keep everything except the first entry and the last entry.~n"),
+	[false, true, true, true, false];
+choose_keepers([Y, Z, X, X, X]) ->
+	% Three of a kind, shoot for four of a kind or Yahtzee
+	log("Three of a kind. Keep everything except the first two entries.~n"),
+	[false, false, true, true, true];
+choose_keepers([Y, Z, W, X, X]) ->
+	% Two of a kind, shoot for more
+	log("Two of a kind. Keep the pair.~n"),
+	[false, false, false, true, true];
+choose_keepers([Y, Z, X, X, W]) ->
+	% Two of a kind, shoot for more
+	log("Two of a kind. Keep the pair.~n"),
+	[false, false, true, true, false];
+choose_keepers([Y, X, X, W, Z]) ->
+	% Two of a kind, shoot for more
+	log("Two of a kind. Keep the pair.~n"),
+	[false, true, true, false, false];
+choose_keepers([X, X, W, Y, Z]) ->
+	% Two of a kind, shoot for more
+	log("Two of a kind. Keep the pair.~n"),
+	[true, true, false, false, false];
+choose_keepers([R1, R2, R3, R4, R5])->
+	% No pattern
+	log("No pattern, get new set of 5"),
+	[false, false, false, false, false].
+	%case (R2 == R1 + 1 and R3 == R2 + 1) of
+	%	or (R2 == R1 + 1 and R4 == R3 + 1) 		or (R2 == R1 + 1 and R.
 
 % NEED TO DO, return an integer representing a line on the scorecard in
 % which to score the dice.
