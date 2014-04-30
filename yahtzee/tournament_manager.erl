@@ -9,7 +9,7 @@
 %% ====================================================================
 %%                             Public API
 %% ====================================================================
--export([tournament_start/2]).
+-export([tournament_start/4]).
 %% ====================================================================
 %%                             Constants
 %% ====================================================================
@@ -19,5 +19,5 @@
 
 % Run a full tournament with the given list of players, reporting results
 % back to the Parent pid.
-tournament_start(Players, Parent) ->
+tournament_start(Players, Parent, Gpm, Tid) ->
     halt().
