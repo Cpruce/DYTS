@@ -17,8 +17,11 @@
 %%                             Functions
 %% ====================================================================
 
-serve_game(P1, P2, Tid, Gid)->
+serve_game(P1, P1Pid, P2, P2Pid, Tid, Gid)->
 	log("Beginning game between ~p and ~p.~n", [P1, P2]),
+	% spawns two processes to monitor P1 and P2
+	spawn(fun() -> monitor_player(P1, P1Pid, self()) end),
+	spawn(fun() -> monitor_player(P2, P2Pid, self()) end),		
 	turn(0, P1, P2, [], [], Tid, Gid).
 
 turn(13, P1, P2, P1ScoreCard, P2ScoreCard, Tid, Gid)->
@@ -76,7 +79,6 @@ assembly_phase(Player, ScoreCard, OppScoreCard, Dice, Tid, Gid, RollNum, 6) ->
 		{play_action, PlayerPid, {Ref, Tid, Gid, RollNum, Keepers, ScoreCardLine}}->
 		        DiceKept = prune_dice(Dice, Keepers),
 			SubsetExcl = SortedDice--DiceKept,	
-			% mark scorecard!
 			NewDice = lists:sort(DiceKept++reroll(SubsetReroll)),
 			scoring_process(Player, ScoreCard, OppScoreCard, NewDice, Tid, Gid, RollNum);
 		_ -> 
@@ -90,7 +92,6 @@ assembly_phase(Player, ScoreCard, OppScoreCard, Dice, Tid, Gid, RollNum, 5) ->
 		{play_action, PlayerPid, {Ref, Tid, Gid, RollNum, Keepers, ScoreCardLine}}->
 		        DiceKept = prune_dice(SortedDice, Keepers),
 			SubsetReroll = SortedDice--DiceKept,	
-			% mark scorecard!
 			NewDice = lists:sort(DiceKept++reroll(SubsetReroll)),
 			assembly_phase(Player, ScoreCard, OppScoreCard, NewDice, Tid, Gid, RollNum, 6);
 		_ -> 
@@ -109,8 +110,7 @@ reroll(Subset) ->
 % scoring phase, return the updated scorecard
 scoring_phase(Player, ScoreCard, OppScoreCard, Dice, Tid, Gid, RollNum)->
 	log("Beginning scoring phase for ~p in round ~p in game ~p in tournament ~p.~n", [Player, RollNum, Gid, Tid]),
-	find_max(lists:map(fun(X)->scoring_process(X) end, pred_perms(
-
+	
 % returns the max score of a pattern
 scoring_process([X, X, X, X, X]) -> 
 	% Yahtzee
@@ -179,4 +179,14 @@ scoring_process([R1, R2, R3, R4, R5])->
 	% No pattern
 	log("No pattern, get new set of 5"),
 	[false, false, false, false, false].
-	
+
+% monitor players to make sure they are still in the game
+monitor_player(Name, Pid, ParentPid) -> 
+	erlang:monitor(yahtzee_player, Pid), %{RegName, Node}
+	receive
+		{'DOWN', _Ref, process, _Pid, normal} ->
+			ParentPid ! {self(), check, Name};
+		{'DOWN', _Ref, process, _Pid, _Reason} ->
+			ParentPid ! {self(), missing, Name}
+	end.
+ 

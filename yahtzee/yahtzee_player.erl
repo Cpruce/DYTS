@@ -41,9 +41,13 @@ player_begin(Name, Pwd, TMs)->
 	hd(TMs) ! {login, self(), {Name, Pwd}},
 	receive
 		{logged_in, Pid, LoginTicket}->
+			logged_in(Name, Pwd, TMs, [], LoginTicket);
+		_ -> 
+			player_begin(Name, Pwd, tl(TMs))
+	end.
 
 % Messages sent to a logged-in player.
-logged_in(Name, Pwd, TMs, Tournaments, LoginTicket)->
+logged_in(Name, Pwd, TMs, Tournaments, ScoreCards, LoginTicket)->
 	receive
 		% Data is a single tournament identifier
 		{start_tournament, Pid, Tid} ->
@@ -57,7 +61,12 @@ logged_in(Name, Pwd, TMs, Tournaments, LoginTicket)->
 			Keepers = choose_keepers(lists:sort(Dice)),
 			ScoreCardLine = choose_line(ScoreCard, Dice, Keepers),
 			Pid ! {play_action, self(), {make_ref(), Tid, Gid, RollNum, Keepers, ScoreCardLine}},
-			logged_in(Name, Pwd, TMs, Tournaments, LoginTicket)
+			logged_in(Name, Pwd, TMs, Tournaments, LoginTicket);
+
+		{game_over, Pid, } ->
+			{Box, Pattern} = find_max(lists:map(fun(X)->scoring_process(X) end, pred_perms(Dice, fun shared:pred/1))),
+			NewSC = ScoreCard++{Box, Pattern}, 
+			logged_in(Name, Pwd, TMs, Tournaments, ScoreCards, LoginTicket); 
 		_ -> 
 			log("Received  unknown message")
 	end.
