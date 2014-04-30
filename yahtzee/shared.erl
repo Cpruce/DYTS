@@ -42,3 +42,18 @@ shuffle_(Lst, Src) ->
                     shuffle_(Lst_, T)
             end
     end.
+
+% Produce all permutations, code taken from http://erlang.org/pipermail/erlang-questions/2010-September/053287.html
+pred(L = [H | _T]) when H > 1 ->
+	    L;
+pred(_L) ->
+	    [].
+
+do_pred_perms([], _Pred) -> 
+	    [[]];
+do_pred_perms(L, Pred)  -> 
+	    [Pred([H|T]) || H <- L, T <- do_pred_perms(L--[H], Pred)].
+
+pred_perms(List, Pred) ->
+	    Res = do_pred_perms(List, Pred),
+	        lists:filter(fun(E) -> E =/= [] end, Res).

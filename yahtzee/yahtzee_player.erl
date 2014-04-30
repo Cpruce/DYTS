@@ -62,7 +62,6 @@ logged_in(Name, Pwd, TMs, Tournaments, LoginTicket)->
 			log("Received  unknown message")
 	end.
 
-%% Modify to be used for when the scorecard is updated
 
 % Returns list of booleans (true or false atoms)
 % Assumes that a sorted list was supplied
