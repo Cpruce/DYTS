@@ -5,11 +5,11 @@
 %% @doc _D157R18U73D_Y4H7533_
 -module(game_manager).
 
--import(shared).
+-import(shared, [pred/1, pred_perms/2, timestamp/0, log/1, log/2, shuffle/1]).
 %% ====================================================================
 %%                             Public API
 %% ====================================================================
--export(serve_game/2).
+-export([serve_game/6]).
 %% ====================================================================
 %%                             Constants
 %% ====================================================================
@@ -25,7 +25,7 @@ serve_game(P1, P1Pid, P2, P2Pid, Tid, Gid)->
 	turn(0, P1, P2, [], [], Tid, Gid).
 
 get_score([])-> 0;
-get_score([{Box, _Pattern}|ScoreCard] ->
+get_score([{Box, _Pattern}|ScoreCard]) ->
 	Box+get_score(ScoreCard).
 
 % Game over, check winner
@@ -41,11 +41,10 @@ check_winner(P1, P2, P1ScoreCard, P2ScoreCard, Tid, Gid)->
 			case P1Score > P2Score of
 				true ->
 					% P1 is the winner
-					log("P1 won!~n"),
-
+					log("P1 won!~n");
 				false ->
 					% P2 is the winner
-					log("P2 won!~n"),
+					log("P2 won!~n")
 			end
 	end.
 
@@ -76,8 +75,8 @@ assembly_phase(Player, ScoreCard, OppScoreCard, Dice, Tid, Gid, RollNum, 6) ->
 	receive
 		{play_action, PlayerPid, {Ref, Tid, Gid, RollNum, Keepers, ScoreCardLine}}->
 		        DiceKept = prune_dice(Dice, Keepers),
-			SubsetExcl = SortedDice--DiceKept,	
-			NewDice = lists:sort(DiceKept++reroll(SubsetReroll)),
+			SubsetExcl = Dice--DiceKept,	
+			NewDice = lists:sort(DiceKept++reroll(SubsetExcl)),
 			scoring_process(Player, ScoreCard, OppScoreCard, NewDice, Tid, Gid, RollNum);
 		_ -> 
 			log("Unexpected message at roll")
@@ -95,10 +94,10 @@ assembly_phase(Player, ScoreCard, OppScoreCard, Dice, Tid, Gid, RollNum, 5) ->
 		_ -> 
 			log("Unexpected message at roll")
 	end;
-assembly_phase(Player, ScoreCard, OppScoreCard, Dice, Tid, Gid, Round)->
+assembly_phase(Player, ScoreCard, OppScoreCard, Dice, Tid, Gid, RollNum, DieRoll)->
 	% Generate random roll 1 <= N < 7
 	Rnd = crypto:rand_uniform(1, 7),
-	assembly_phase(Player, [Rnd]++Dice, Round+1).
+	assembly_phase(Player, ScoreCard, OppScoreCard, [Rnd]++Dice, Tid, Gid, RollNum, DieRoll+1).
 
 % reroll attempts
 reroll([]) -> [];
