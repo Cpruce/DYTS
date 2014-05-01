@@ -26,7 +26,7 @@ shuffle(List) ->
     shuffle_([], List).
 
 % Fisher-Yates shuffle, referenced from http://en.wikipedia.org/wiki/Fisher%E2%80%93Yates_shuffle
-% Uses "inside-out"
+% Uses "inside-out" method. Not tested very thoroughly.
 shuffle_(Lst, Src) ->
     case Src of
         [] -> Lst;
