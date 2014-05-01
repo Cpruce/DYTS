@@ -5,11 +5,11 @@
 %% @doc _D157R18U73D_Y4H7533_
 -module(yahtzee_player).
 
--import(shared).
+-import(shared, [pred/1, pred_perms/2, timestamp/0, log/1, log/2, shuffle/1]).
 %% ====================================================================
 %%                             Public API
 %% ====================================================================
--export(main/1).
+-export([main/1]).
 %% ====================================================================
 %%                             Constants
 %% ====================================================================
@@ -65,14 +65,6 @@ logged_in(Name, Pwd, TMs, Tournaments, LoginTicket)->
 			log("Received notification that tournament ~p is ending.~n", [Tid]),
 
 			logged_in(Name, Pwd, TMs, Games, LoginTicket);
-		{start_match, Pid, {Ref, Tid, Mid}}->
-			log("Entering match ~p in tournament ~p.~n", [Mid, Tid]),
-			dict:store(Mid, dict:new(), dict:fetch(Tid, Tournaments)),
-			logged_in(Name, Pwd, TMs, Tournaments, LoginTicket);	
-		{start_game, Pid, {Ref, Tid, Mid, Gid}}->
-			log("Entering game ~p in match ~p in tournament ~p.~n", [Gid, Mid, Tid]),
-			dict:store(Gid, dict:new(), dict:fetch(Mid, dict:fetch(Tid, Tournaments))),
-			logged_in(Name, Pwd, TMs, Tournaments, LoginTicket);	
 		{play_request, Pid, {Ref, Tid, Gid, RollNum, Dice, ScoreCard, OppScoreCard}}->
 			log("Received roll of ~p on roll ~p in game ~p in tournament ~p. Player has ~p and opponent has ~p.~n", [Dice, RollNum, Gid, Tid, Scorecard, OppScoreCard]),
 			{Box, Pattern} = find_max(lists:map(fun(X)->scoring_process(X) end, pred_perms(Dice, fun shared:pred/1))),
@@ -87,23 +79,6 @@ logged_in(Name, Pwd, TMs, Tournaments, LoginTicket)->
 			Pid ! {play_action, self(), {make_ref(), Tid, Gid, RollNum, Keepers, ScoreCardLine}},
 			logged_in(Name, Pwd, TMs, Tournaments, LoginTicket);
 
-		{match_over, Pid, {Ref, Tid, Mid, Winner}}->
-			case Winner == Name of
-				true ->
-					% Advancing, if not winner of tournament
-					logged_in(Name, Pwd, TMs, Games, 
-				false ->
-			end;
-		{game_over, Pid, {Ref, Tid, Gid, Winner, P1Count, P2Count}} ->
-			case Winner == Name of
-				true ->
-					;
-				false ->
-			end;
-		{turn_over, Pid, {Ref, Dice, Tid, } ->
-			{Box, Pattern} = find_max(lists:map(fun(X)->scoring_process(X) end, pred_perms(Dice, fun shared:pred/1))),
-			NewSC = ScoreCard++{Box, Pattern}, 
-			log("New scorecard is ~p~n", [NewSC]),
 			logged_in(Name, Pwd, TMs, Tournaments, Games++[NewSC], LoginTicket); 
 		_ -> 
 			log("Received  unknown message")
@@ -115,17 +90,17 @@ scoring_process([X, X, X, X, X]) ->
 	% Yahtzee
 	log("Yahtzee! Mark it 50.~n"),
 	{50, [X, X, X, X, X]};
-scoring_process([A, B, C, D, E]) when E == D + 1 and D == C + 1 and
-		C == B + 1 and B == A + 1 ->
+scoring_process([A, B, C, D, E]) when (E == D + 1) and (D == C + 1) and
+		(C == B + 1) and (B == A + 1) ->
 	% Large Straight
 	log("Large straight! That's 40.~n"),
 	{40, [A, B, C, D, E]};
-scoring_process([A, B, C, D, E]) when E == D + 1 and D == C + 1 and
-		C == B + 1 ->
+scoring_process([A, B, C, D, E]) when (E == D + 1) and (D == C + 1) and
+		(C == B + 1) ->
 	log("Small straight! 30 isn't too small relatively.~n"),
 	{30, [A, B, C, D, E]};
-scoring_process([A, B, C, D, E]) when D == C + 1 and C == B + 1 and 
-		B == A + 1 ->
+scoring_process([A, B, C, D, E]) when (D == C + 1) and (C == B + 1) and 
+		(B == A + 1) ->
 	log("Small straight! 30 isn't too small relatively.~n"),
 	{30, [A, B, C, D, E]};
 scoring_process([A, A, A, B, B]) -> 
@@ -183,18 +158,18 @@ choose_keepers([X, X, X, X, X]) ->
 	% Yahtzee
 	log("Yahtzee! Keep everything.~n"),
 	[true, true, true, true, true];
-choose_keepers([A, B, C, D, E]) when E == D + 1 and D == C + 1 and
-		C == B + 1 and B == A + 1 ->
+choose_keepers([A, B, C, D, E]) when (E == D + 1) and (D == C + 1) and
+		(C == B + 1) and (B == A + 1) ->
 	% Large Straight
 	log("Large straight! Keep everything.~n"),
 	[true, true, true, true, true];
-choose_keepers([A, B, C, D, E]) when E == D + 1 and D == C + 1 and
-		C == B + 1 ->
+choose_keepers([A, B, C, D, E]) when (E == D + 1) and (D == C + 1) and
+		(C == B + 1) ->
 	% Small Straight, might as well go for the Large Straight
 	log("Small straight! Keep everything except the first entry.~n"),
 	[false, true, true, true, true];
-choose_keepers([A, B, C, D, E]) when D == C + 1 and C == B + 1 and 
-		B == A + 1 ->
+choose_keepers([A, B, C, D, E]) when (D == C + 1) and (C == B + 1) and 
+		(B == A + 1) ->
 	% Small Straight, might as well go for the Large Straight
 	log("Small straight! Keep everything except the last entry.~n"),
 	[true, true, true, true, false];	

@@ -1,5 +1,5 @@
 -module(shared).
--export([timestamp/0, log/1, log/2, shuffle/1]).
+-export([pred/1, pred_perms/2, timestamp/0, log/1, log/2, shuffle/1]).
 
 % Generate a timestamp for the current microsecond.
 -spec timestamp() -> io_lib:chars().
