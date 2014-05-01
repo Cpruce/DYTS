@@ -36,41 +36,146 @@ main(Params)->
 
 % Messages sent to a player.
 player_begin(_Name, _Pwd, [])->
-	log("No Tournament Managers to connect to~n", []);	
+	log("No Tournament Managers to connect to. Hang around for a tournament manager.~n", []),
+	receive 
+		{tournament_manager, Pid, Name} ->
+			ok;
+		_ ->
+			ok
+	end;	
 player_begin(Name, Pwd, TMs)->
 	hd(TMs) ! {login, self(), {Name, Pwd}},
 	receive
 		{logged_in, Pid, LoginTicket}->
-			logged_in(Name, Pwd, TMs, [], LoginTicket);
+			logged_in(Name, Pwd, TMs, dict:new(), LoginTicket);
 		_ -> 
 			player_begin(Name, Pwd, tl(TMs))
 	end.
 
 % Messages sent to a logged-in player.
-logged_in(Name, Pwd, TMs, Tournaments, ScoreCards, LoginTicket)->
+logged_in(Name, Pwd, TMs, Tournaments, LoginTicket)->
 	receive
 		% Data is a single tournament identifier
 		{start_tournament, Pid, Tid} ->
 			log("Received notification that tournament ~p is starting.~n", [Tid]),
-			logged_in(Name, Pwd, TMs, Tournaments++[Tid], LoginTicket);
+			% create new table of matches
+			dict:store(Tid, dict:new(), Tournaments),
+			logged_in(Name, Pwd, TMs, Tournaments, LoginTicket);
 		{end_tournament, Pid, Tid} ->
 			log("Received notification that tournament ~p is ending.~n", [Tid]),
-			logged_in(Name, Pwd, TMs, Tournaments--[Tid], LoginTicket);
+
+			logged_in(Name, Pwd, TMs, Games, LoginTicket);
+		{start_match, Pid, {Ref, Tid, Mid}}->
+			log("Entering match ~p in tournament ~p.~n", [Mid, Tid]),
+			dict:store(Mid, dict:new(), dict:fetch(Tid, Tournaments)),
+			logged_in(Name, Pwd, TMs, Tournaments, LoginTicket);	
+		{start_game, Pid, {Ref, Tid, Mid, Gid}}->
+			log("Entering game ~p in match ~p in tournament ~p.~n", [Gid, Mid, Tid]),
+			dict:store(Gid, dict:new(), dict:fetch(Mid, dict:fetch(Tid, Tournaments))),
+			logged_in(Name, Pwd, TMs, Tournaments, LoginTicket);	
 		{play_request, Pid, {Ref, Tid, Gid, RollNum, Dice, ScoreCard, OppScoreCard}}->
 			log("Received roll of ~p on roll ~p in game ~p in tournament ~p. Player has ~p and opponent has ~p.~n", [Dice, RollNum, Gid, Tid, Scorecard, OppScoreCard]),
-			Keepers = choose_keepers(lists:sort(Dice)),
-			ScoreCardLine = choose_line(ScoreCard, Dice, Keepers),
+			{Box, Pattern} = find_max(lists:map(fun(X)->scoring_process(X) end, pred_perms(Dice, fun shared:pred/1))),
+			NKeepers = choose_keepers(lists:sort(Dice)),
+			case Box == 50 of 
+				true ->
+					% no need to continue
+					ScoreCardLine = 1;
+				false ->
+					ScoreCardLine = 0
+			end,
 			Pid ! {play_action, self(), {make_ref(), Tid, Gid, RollNum, Keepers, ScoreCardLine}},
 			logged_in(Name, Pwd, TMs, Tournaments, LoginTicket);
 
-		{game_over, Pid, } ->
+		{match_over, Pid, {Ref, Tid, Mid, Winner}}->
+			case Winner == Name of
+				true ->
+					% Advancing, if not winner of tournament
+					logged_in(Name, Pwd, TMs, Games, 
+				false ->
+			end;
+		{game_over, Pid, {Ref, Tid, Gid, Winner, P1Count, P2Count}} ->
+			case Winner == Name of
+				true ->
+					;
+				false ->
+			end;
+		{turn_over, Pid, {Ref, Dice, Tid, } ->
 			{Box, Pattern} = find_max(lists:map(fun(X)->scoring_process(X) end, pred_perms(Dice, fun shared:pred/1))),
 			NewSC = ScoreCard++{Box, Pattern}, 
-			logged_in(Name, Pwd, TMs, Tournaments, ScoreCards, LoginTicket); 
+			log("New scorecard is ~p~n", [NewSC]),
+			logged_in(Name, Pwd, TMs, Tournaments, Games++[NewSC], LoginTicket); 
 		_ -> 
 			log("Received  unknown message")
 	end.
 
+% Returns a tuple of the Box filled in with the score 
+% and the scorecard updated with the newest pattern.
+scoring_process([X, X, X, X, X]) -> 
+	% Yahtzee
+	log("Yahtzee! Mark it 50.~n"),
+	{50, [X, X, X, X, X]};
+scoring_process([A, B, C, D, E]) when E == D + 1 and D == C + 1 and
+		C == B + 1 and B == A + 1 ->
+	% Large Straight
+	log("Large straight! That's 40.~n"),
+	{40, [A, B, C, D, E]};
+scoring_process([A, B, C, D, E]) when E == D + 1 and D == C + 1 and
+		C == B + 1 ->
+	log("Small straight! 30 isn't too small relatively.~n"),
+	{30, [A, B, C, D, E]};
+scoring_process([A, B, C, D, E]) when D == C + 1 and C == B + 1 and 
+		B == A + 1 ->
+	log("Small straight! 30 isn't too small relatively.~n"),
+	{30, [A, B, C, D, E]};
+scoring_process([A, A, A, B, B]) -> 
+	% Full House 
+	log("Full house. 25 shall be given.~n"),
+	{25, [A, A, A, B, B]};
+scoring_process([B, B, A, A, A]) ->
+	% Full House
+	log("Full house. 25 shall be given.~n"),
+	{25, [B, B, A, A, A]};
+scoring_process([X, X, X, X, Y]) ->
+	Sum = 4 * X + Y,
+	log("Four of a kind. Sum is ~p.~n", [Sum]),	
+	{Sum, [X, X, X, X, Y]};
+scoring_process([Y, X, X, X, X]) ->
+	Sum = 4 * X + Y,
+	log("Four of a kind. Sum is ~p.~n", [Sum]),	
+	{Sum, [Y, X, X, X, X]};
+scoring_process([X, X, X, Y, Z]) ->
+	Sum = 3 * X + Y + Z,
+	log("Three of a kind. Sum is ~p.~n", [Sum]),	
+	{Sum, [X, X, X, Y, Z]};
+scoring_process([Y, X, X, X, Z]) ->
+	Sum = 3 * X + Y + Z,
+	log("Three of a kind. Sum is ~p.~n", [Sum]),	
+	{Sum, [Y, X, X, X, Z]};
+scoring_process([Y, Z, X, X, X]) ->
+	Sum = 3 * X + Y + Z,
+	log("Three of a kind. Sum is ~p.~n", [Sum]),	
+	{Sum, [Y, Z, X, X, X]};
+scoring_process([Y, Z, W, X, X]) ->
+	Sum = 2 * X + W + Y + Z,
+	log("Two of a kind. Sum is ~p.~n", [Sum]),	
+	{Sum, [Y, Z, W, X, X]};
+scoring_process([Y, Z, X, X, W]) ->
+	Sum = 2 * X + W + Y + Z,
+	log("Two of a kind. Sum is ~p.~n", [Sum]),	
+	{Sum, [Y, Z, X, X, W]};
+scoring_process([Y, X, X, W, Z]) ->
+	Sum = 2 * X + W + Y + Z,
+	log("Two of a kind. Sum is ~p.~n", [Sum]),	
+	{Sum, [Y, X, X, W, Z]};
+scoring_process([X, X, W, Y, Z]) ->
+	Sum = 2 * X + W + Y + Z,
+	log("Two of a kind. Sum is ~p.~n", [Sum]),	
+	{Sum, [X, X, W, Y, Z]};
+scoring_process([R1, R2, R3, R4, R5])->
+	Sum = R1 + R2 + R3 + R4 + R5,
+	log("No pattern. Sum is ~p.~n", [Sum]),
+	{Sum, [R1, R2, R3, R4, R5]}.
 
 % Returns list of booleans (true or false atoms)
 % Assumes that a sorted list was supplied
@@ -144,6 +249,3 @@ choose_keepers([R1, R2, R3, R4, R5])->
 	%case (R2 == R1 + 1 and R3 == R2 + 1) of
 	%	or (R2 == R1 + 1 and R4 == R3 + 1) 		or (R2 == R1 + 1 and R.
 
-% NEED TO DO, return an integer representing a line on the scorecard in
-% which to score the dice.
-choose_line(ScoreCard, Dice, Keepers)->ok.

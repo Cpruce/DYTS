@@ -24,45 +24,43 @@ serve_game(P1, P1Pid, P2, P2Pid, Tid, Gid)->
 	spawn(fun() -> monitor_player(P2, P2Pid, self()) end),		
 	turn(0, P1, P2, [], [], Tid, Gid).
 
+get_score([])-> 0;
+get_score([{Box, _Pattern}|ScoreCard] ->
+	Box+get_score(ScoreCard).
+
+% Game over, check winner
+check_winner(P1, P2, P1ScoreCard, P2ScoreCard, Tid, Gid)->
+	P1Score = get_score(P1ScoreCard),
+	P2Score = get_score(P2ScoreCard),
+	case P1Score == P2Score of
+		true ->
+			% Tie game, start game over
+			log("Tie game, starting over.~n"),
+			turn(0, P1, P2, [], [], Tid, Gid);
+		false ->
+			case P1Score > P2Score of
+				true ->
+					% P1 is the winner
+					log("P1 won!~n"),
+
+				false ->
+					% P2 is the winner
+					log("P2 won!~n"),
+			end
+	end.
+
+
+% 13 rounds for 1 game
 turn(13, P1, P2, P1ScoreCard, P2ScoreCard, Tid, Gid)->
 	log("Last turn between ~p and ~p.~n", [P1, P2]),
-	NewP1SC = assembly_phase(P1, P1ScoreCard, P2ScoreCard, [], Tid, Gid, 13, 0),
-	NewP2SC = assembly_phase(P2, P2ScoreCard, P1ScoreCard, [], Tid, Gid, 13, 0),
-	% Game over, give both players their scorecards
-	P1 ! {game_over, self(), {make_ref(), Tid, Gid, NewP1SC, NewP2SC}},
-	receive
-		{player_exit, P1Pid, {Ref, Tid, Gid}}-> 
-			log("Player 1 has left the game.~n"),
-			ok;
-		_ -> ok
-	end,
-	P2 ! {game_over, self(), {make_ref(), Tid, Gid, NewP2SC, NewP1SC}},
-	receive
-		{player_exit, P2Pid, {Ref, Tid, Gid}}-> 
-			log("Player 2 has left the game. Game ending.~n"),
-			ok;
-		_ -> ok
-	end;
+	{P1Box, P1Pattern} = assembly_phase(P1, P1ScoreCard, P2ScoreCard, [], Tid, Gid, 13, 0),
+	{P2Box, P2Pattern} = assembly_phase(P2, P2ScoreCard, P1ScoreCard, [], Tid, Gid, 13, 0),
+	check_winner(P1, P2, P1ScoreCard++[{P1Box, P1Pattern}], P2ScoreCard,++[{P2Box, P2Pattern}], Tid, Gid).
 turn(RollNum, P1, P2, P1ScoreCard, P2ScoreCard, Tid, Gid)->
 	log("Turn ~p between ~p and ~p.~n", [RollNum, P1, P2]),
-	NewP1SC = assembly_phase(P1, P1ScoreCard, P2ScoreCard, [], Tid, Gid, RollNum, 0),
-	NewP2SC = assembly_phase(P2, P2ScoreCard, P1ScoreCard, [], Tid, Gid, RollNum, 0),
-	% round over, give both players both scorecards
-	P1 ! {turn_over, self(), {make_ref(), Tid, Gid, NewP1SC, NewP2SC}},
-	receive
-		{player_ready, P1Pid, {Ref, Tid, Gid}}-> 
-			log("Player 1 has received the scorecards.~n"),
-			ok;
-		_ -> ok
-	end,
-	P2 ! {game_over, self(), {make_ref(), Tid, Gid, NewP2SC, NewP1SC}},
-	receive
-		{player_exit, P2Pid, {Ref, Tid, Gid}}-> 
-			log("Player 2 has received the scorecards.~n"),
-			ok;
-		_ -> ok
-	end,
-	turn(RollNum+1, P1, P2, NewP1SC, NewP2SC, Tid, Gid).
+	{P1Box, P1Pattern} = assembly_phase(P1, P1ScoreCard, P2ScoreCard, [], Tid, Gid, RollNum, 0),
+	{P2Box, P2Pattern} = assembly_phase(P2, P2ScoreCard, P1ScoreCard, [], Tid, Gid, RollNum, 0),
+ 	turn(RollNum+1, P1, P2, P1ScoreCard++[{P1Box, P1Pattern}], P2ScoreCard++[P2Box, P2Pattern], Tid, Gid).
 
 % separate dice kept and the dice to be rerolled
 prune_dice([], []) -> [];
@@ -110,83 +108,27 @@ reroll(Subset) ->
 % scoring phase, return the updated scorecard
 scoring_phase(Player, ScoreCard, OppScoreCard, Dice, Tid, Gid, RollNum)->
 	log("Beginning scoring phase for ~p in round ~p in game ~p in tournament ~p.~n", [Player, RollNum, Gid, Tid]),
-	
-% returns the max score of a pattern
-scoring_process([X, X, X, X, X]) -> 
-	% Yahtzee
-	log("Yahtzee! Keep everything.~n"),
-	[true, true, true, true, true];
-scoring_process([A, B, C, D, E]) when E == D + 1 and D == C + 1 and
-		C == B + 1 and B == A + 1 ->
-	% Large Straight
-	log("Large straight! Keep everything.~n"),
-	[true, true, true, true, true];
-scoring_process([A, B, C, D, E]) when E == D + 1 and D == C + 1 and
-		C == B + 1 ->
-	% Small Straight, might as well go for the Large Straight
-	log("Small straight! Keep everything except the first entry.~n"),
-	[false, true, true, true, true];
-scoring_process([A, B, C, D, E]) when D == C + 1 and C == B + 1 and 
-		B == A + 1 ->
-	% Small Straight, might as well go for the Large Straight
-	log("Small straight! Keep everything except the last entry.~n"),
-	[true, true, true, true, false];	
-scoring_process([A, A, A, B, B]) -> 
-	% Full House 
-	log("Full house. Keep everything, not worth the risk.~n"),
-	[true, true, true, true, true];
-scoring_process([B, B, A, A, A]) ->
-	% Full House
-	log("Full house. Keep everything, not worth the risk.~n"),
-	[true, true, true, true, true];
-scoring_process([X, X, X, X, Y]) ->
-	% Four of a Kind, might as well go for the Yahtzee
-	log("Four of a kind. Keep everything except the last entry.~n"),	
-	[true, true, true, true, false];
-scoring_process([Y, X, X, X, X]) ->
-	% Four of a Kind, might as well go for the Yahtzee
-	log("Four of a kind. Keep everything except the first entry.~n"),	
-	[false, true, true, true, true];
-scoring_process([X, X, X, Y, Z]) ->
-	% Three of a kind, shoot for four of a kind or Yahtzee
-	log("Three of a kind. Keep everything except the last two entries.~n"),	
-	[true, true, true, false, false];
-scoring_process([Y, X, X, X, Z]) ->
-	% Three of a kind, shoot for four of a kind or Yahtzee
-	log("Three of a kind. Keep everything except the first entry and the last entry.~n"),
-	[false, true, true, true, false];
-scoring_process([Y, Z, X, X, X]) ->
-	% Three of a kind, shoot for four of a kind or Yahtzee
-	log("Three of a kind. Keep everything except the first two entries.~n"),
-	[false, false, true, true, true];
-scoring_process([Y, Z, W, X, X]) ->
-	% Two of a kind, shoot for more
-	log("Two of a kind. Keep the pair.~n"),
-	[false, false, false, true, true];
-scoring_process([Y, Z, X, X, W]) ->
-	% Two of a kind, shoot for more
-	log("Two of a kind. Keep the pair.~n"),
-	[false, false, true, true, false];
-scoring_process([Y, X, X, W, Z]) ->
-	% Two of a kind, shoot for more
-	log("Two of a kind. Keep the pair.~n"),
-	[false, true, true, false, false];
-scoring_process([X, X, W, Y, Z]) ->
-	% Two of a kind, shoot for more
-	log("Two of a kind. Keep the pair.~n"),
-	[true, true, false, false, false];
-scoring_process([R1, R2, R3, R4, R5])->
-	% No pattern
-	log("No pattern, get new set of 5"),
-	[false, false, false, false, false].
+	% round over, give both players both scorecards
+	Player ! {turn_over, self(), {make_ref(), Dice, Tid, Gid, ScoreCard, OppScoreCard}},
+	receive
+		{player_ready, P1Pid, {Ref, Tid, Gid}}-> 
+			log("Player 1 has received the scorecards.~n"),
+			ok;
+		_ -> ok
+	end.
 
 % monitor players to make sure they are still in the game
 monitor_player(Name, Pid, ParentPid) -> 
 	erlang:monitor(yahtzee_player, Pid), %{RegName, Node}
 	receive
+	
 		{'DOWN', _Ref, process, _Pid, normal} ->
-			ParentPid ! {self(), check, Name};
+
+			ParentPid ! {self(), normal, Name};
+
 		{'DOWN', _Ref, process, _Pid, _Reason} ->
+
 			ParentPid ! {self(), missing, Name}
+	
 	end.
  
