@@ -47,7 +47,7 @@ player_begin(Name, Pwd, TMs)->
 	hd(TMs) ! {login, self(), {Name, Pwd}},
 	receive
 		{logged_in, Pid, LoginTicket}->
-			logged_in(Name, Pwd, TMs, dict:new(), LoginTicket);
+			logged_in(Name, Pwd, TMs, [], LoginTicket);
 		_ -> 
 			player_begin(Name, Pwd, tl(TMs))
 	end.
@@ -58,30 +58,36 @@ logged_in(Name, Pwd, TMs, Tournaments, LoginTicket)->
 		% Data is a single tournament identifier
 		{start_tournament, Pid, Tid} ->
 			log("Received notification that tournament ~p is starting.~n", [Tid]),
-			% create new table of matches
-			dict:store(Tid, dict:new(), Tournaments),
-			logged_in(Name, Pwd, TMs, Tournaments, LoginTicket);
+			logged_in(Name, Pwd, TMs, Tournaments++[Tid], LoginTicket);
 		{end_tournament, Pid, Tid} ->
 			log("Received notification that tournament ~p is ending.~n", [Tid]),
-
-			logged_in(Name, Pwd, TMs, Games, LoginTicket);
+			logged_in(Name, Pwd, TMs, Tournaments--[Tid], LoginTicket);
 		{play_request, Pid, {Ref, Tid, Gid, RollNum, Dice, ScoreCard, OppScoreCard}}->
-			log("Received roll of ~p on roll ~p in game ~p in tournament ~p. Player has ~p and opponent has ~p.~n", [Dice, RollNum, Gid, Tid, Scorecard, OppScoreCard]),
-			{Box, Pattern} = find_max(lists:map(fun(X)->scoring_process(X) end, pred_perms(Dice, fun shared:pred/1))),
-			NKeepers = choose_keepers(lists:sort(Dice)),
+			log("Received roll of ~p on roll ~p in game ~p in tournament ~p. Player has ~p and opponent has ~p.~n", [Dice, RollNum, Gid, Tid, ScoreCard, OppScoreCard]),
+			{Box, Pattern} = find_max({0, [0, 0, 0, 0, 0]}, lists:map(fun(X)->scoring_process(X) end, pred_perms(Dice, fun shared:pred/1))),
+			Keepers = choose_keepers(lists:sort(Dice)),
 			case Box == 50 of 
 				true ->
 					% no need to continue
-					ScoreCardLine = 1;
+					ScoreCardLine = RollNum;
 				false ->
 					ScoreCardLine = 0
 			end,
 			Pid ! {play_action, self(), {make_ref(), Tid, Gid, RollNum, Keepers, ScoreCardLine}},
 			logged_in(Name, Pwd, TMs, Tournaments, LoginTicket);
 
-			logged_in(Name, Pwd, TMs, Tournaments, Games++[NewSC], LoginTicket); 
 		_ -> 
 			log("Received  unknown message")
+	end.
+
+% find max score from each permutation of the dice
+find_max(Max, [])-> Max;
+find_max(Max, [{Box, Pattern}|Perms])->
+	case element(1, Max) < Box of
+		true ->
+			find_max({Box, Pattern}, Perms);
+		false ->
+			find_max(Max, Perms)
 	end.
 
 % Returns a tuple of the Box filled in with the score 
@@ -163,12 +169,12 @@ choose_keepers([A, B, C, D, E]) when (E == D + 1) and (D == C + 1) and
 	% Large Straight
 	log("Large straight! Keep everything.~n"),
 	[true, true, true, true, true];
-choose_keepers([A, B, C, D, E]) when (E == D + 1) and (D == C + 1) and
+choose_keepers([_A, B, C, D, E]) when (E == D + 1) and (D == C + 1) and
 		(C == B + 1) ->
 	% Small Straight, might as well go for the Large Straight
 	log("Small straight! Keep everything except the first entry.~n"),
 	[false, true, true, true, true];
-choose_keepers([A, B, C, D, E]) when (D == C + 1) and (C == B + 1) and 
+choose_keepers([A, B, C, D, _E]) when (D == C + 1) and (C == B + 1) and 
 		(B == A + 1) ->
 	% Small Straight, might as well go for the Large Straight
 	log("Small straight! Keep everything except the last entry.~n"),
@@ -181,43 +187,43 @@ choose_keepers([B, B, A, A, A]) ->
 	% Full House
 	log("Full house. Keep everything, not worth the risk.~n"),
 	[true, true, true, true, true];
-choose_keepers([X, X, X, X, Y]) ->
+choose_keepers([X, X, X, X, _Y]) ->
 	% Four of a Kind, might as well go for the Yahtzee
 	log("Four of a kind. Keep everything except the last entry.~n"),	
 	[true, true, true, true, false];
-choose_keepers([Y, X, X, X, X]) ->
+choose_keepers([_Y, X, X, X, X]) ->
 	% Four of a Kind, might as well go for the Yahtzee
 	log("Four of a kind. Keep everything except the first entry.~n"),	
 	[false, true, true, true, true];
-choose_keepers([X, X, X, Y, Z]) ->
+choose_keepers([X, X, X, _Y, _Z]) ->
 	% Three of a kind, shoot for four of a kind or Yahtzee
 	log("Three of a kind. Keep everything except the last two entries.~n"),	
 	[true, true, true, false, false];
-choose_keepers([Y, X, X, X, Z]) ->
+choose_keepers([_Y, X, X, X, _Z]) ->
 	% Three of a kind, shoot for four of a kind or Yahtzee
 	log("Three of a kind. Keep everything except the first entry and the last entry.~n"),
 	[false, true, true, true, false];
-choose_keepers([Y, Z, X, X, X]) ->
+choose_keepers([_Y, _Z, X, X, X]) ->
 	% Three of a kind, shoot for four of a kind or Yahtzee
 	log("Three of a kind. Keep everything except the first two entries.~n"),
 	[false, false, true, true, true];
-choose_keepers([Y, Z, W, X, X]) ->
+choose_keepers([_Y, _Z, _W, X, X]) ->
 	% Two of a kind, shoot for more
 	log("Two of a kind. Keep the pair.~n"),
 	[false, false, false, true, true];
-choose_keepers([Y, Z, X, X, W]) ->
+choose_keepers([_Y, _Z, X, X, _W]) ->
 	% Two of a kind, shoot for more
 	log("Two of a kind. Keep the pair.~n"),
 	[false, false, true, true, false];
-choose_keepers([Y, X, X, W, Z]) ->
+choose_keepers([_Y, X, X, _W, _Z]) ->
 	% Two of a kind, shoot for more
 	log("Two of a kind. Keep the pair.~n"),
 	[false, true, true, false, false];
-choose_keepers([X, X, W, Y, Z]) ->
+choose_keepers([X, X, _W, _Y, _Z]) ->
 	% Two of a kind, shoot for more
 	log("Two of a kind. Keep the pair.~n"),
 	[true, true, false, false, false];
-choose_keepers([R1, R2, R3, R4, R5])->
+choose_keepers([_R1, _R2, _R3, _R4, _R5])->
 	% No pattern
 	log("No pattern, get new set of 5"),
 	[false, false, false, false, false].
