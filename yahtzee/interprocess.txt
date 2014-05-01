@@ -1,0 +1,38 @@
+Messages from yahtzee manager to tournament manager:
+
+{invalidate, Username} -> the login token for the given user is no longer
+valid (i.e they have logged in again and been given a new token, or logged
+        out). This should resign them from the tournament if it's running.
+
+{new_ticket, Username} -> the given user has a new token to log in with
+
+{add_players, Players} -> Players is a list of (Username, Pid, Token). Indicates
+    the tournament manager should send that player a start_tournament message.
+
+
+Note on tournament protocol:
+    1. tournament manager sends every player a start_tournament message
+    2. wait for enough players to accept to start
+    3. in case of a reject, request 1 new player from parent
+    4. in case of a timeout, invalidate all pending requests and request new
+        players
+    5. if we get an acceptance from a player that's not invited, send them an
+        end_tournament message
+
+
+tournament manager to yahtzee manager:
+
+{results, tid, Results} -> the tournament is over and the results are enclosed
+ The results are a dict mapping usernames to {MatchWins, MatchLosses,
+     TournamentWins}, where the last field is either 0 or 1.
+
+{request_players, Count} -> we need more users for this tournament. Will be
+    sent initially with Count = NumPlayers, then again whenever a player is
+    logged out, or times out in joining the tournament.
+
+{starting, Players} -> tournament is starting with the given list of players,
+    for sanity checks.
+
+tournament manager to game manager:
+
+game manager to tournament manager:
