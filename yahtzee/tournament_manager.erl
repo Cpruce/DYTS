@@ -23,37 +23,54 @@ tournament_start(Parent, Tid, NumPlayers, Gpm) ->
     Parent ! {request_players, self(), NumPlayers},
     tournament_wait(Parent, Tid, NumPlayers, Gpm, [], []).
 
-bracket_setup(Parent, Tid, NumPlayers, Gpm, [], Bracket)->
-	tournament_run(Parent, Tid, NumPlayers, Gpm, Bracket);
+bracket_setup(Parent, Tid, Mid, NumPlayers, Gpm, [], Bracket)->
+	tournament_run(Parent, Tid, Mid, NumPlayers, Gpm, Bracket, []);
 bracket_setup(Parent, Tid, NumPlayers, Gpm, [P1], Bracket)->
-	tournament_run(Parent, Tid, NumPlayers, Gpm, Bracket++[{P1, bye}], 1);
-bracket_setup(Parent, Tid, NumPlayers, Gpm, [P1,P2|Players], Bracket)->
-	bracket_setup(Parent, Tid, NumPlayers, Gpm, Players, Bracket++[{P1, P2}]).
+	tournament_run(Parent, Tid, Mid, NumPlayers, Gpm, Bracket++[{P1, bye}], 1, []);
+bracket_setup(Parent, Tid, Mid, NumPlayers, Gpm, [P1,P2|Players], Bracket)->
+	bracket_setup(Parent, Tid, Mid, NumPlayers, Gpm, Players, Bracket++[{P1, P2}]).
 
-tournament_run(Parent, Tid, NumPlayers, Gpm, [], NextRound)->
+tournament_run(Parent, Tid, Mid, NumPlayers, Gpm, [], Winners)->
+	case length(Winners) == 1 of
+		true ->
+			log("Tournament over, the winner is ~p!~n", [hd(Winners)]),
+			hd(Winners) ! {end_tournament, Tid},
+			Parent ! {},
+			halt();
+		false ->
+			log("")
+	end,
+	case length(Winners) == NumPlayers of
+		true ->
+			log("Initiating another round of elimination.~n"),
+		    	bracket_setup(Parent, Tid, Mid, NumPlayers, Gpm, Winners, []);
+		false ->
+			log("Waiting for more matches to end.~n")
+	end,
 	receive
-		{game_over, Winner, Loser}->
-			;
+		{match_over, Winner, Loser, RMid, Tid}->
+			log("~p won against ~p in match ~p in tournament ~p.~n", [Winner, Loser, Mid, Tid]),
+			Loser ! {end_tournament, Tid},
+			tournament_run(Parent, Tid, Mid, NumPlayers-1, Gpm, [], Winners++[Winner]);
 		Other ->
 
 	end;
-tournament_run(Parent, Tid, Gid, NumPlayers, Gpm, Bracket)->
-	spawn(tournament_manager, bracket_run, [Parent, Tid, Gid, Bracket]),
-	tournament_run(Parent, Tid, NumPlayers, NumPlayers, Gpm, []).	
+tournament_run(Parent, Tid, Mid, NumPlayers, Gpm, Bracket, Winners)->
+	spawn(tournament_manager, bracket_run, [Parent, Tid, Mid, Bracket]),
+	tournament_run(Parent, Tid, Mid+length(Bracket), NumPlayers, Gpm, [], Winners).	
 
 bracket_run(Parent, Tid, Gid, [])->
 bracket_run(Parent, Tid, Gid, [{P1, bye}|Bracket])->
-	%Parent ! {some_message signifying P1 won}
-bracket_run(Parent, Tid, Gid, [{P1, P2}|Bracket])->
-	spawn(game_manager, serve_game, [P1, P2, Tid, Gid]),
-	bracket_run(Parent, Tid, Gid+1, Bracket). 
-	%	
+	[{
+bracket_run(Parent, Tid, Mid, [{P1, P2}|Bracket])->
+	spawn(game_manager, serve_game, [P1, P2, Tid, Mid]),
+	bracket_run(Parent, Tid, Mid+1, Bracket). 
 
 tournament_wait(Parent, Tid, NumPlayers, Gpm, Players, Pending) ->
     case length(Pending) == NumPlayers of
 	    true ->
-		    log("The required number of players have joined"),
-		    bracket_setup(Parent, Tid, NumPlayers, Gpm, Pending, []);
+		    log("The required number of players have joined.~n"),
+		    bracket_setup(Parent, Tid, 0, NumPlayers, Gpm, Pending, []);
 	    false ->
 		    log("Waiting for players to join.~n")
     end,

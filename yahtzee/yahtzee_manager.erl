@@ -87,11 +87,28 @@ manager_run(Tournaments, Players, PendingTournaments)->
 		log("Pid ~p asked for ~p players.~n", [Pid, NumPlayers]),
 		Pid ! {add_players, TournPlayers},
 		manager_run(Tournaments, Players, PendingTournaments);
-    	{tournament_info, Pid, _}->
-            % FIXME
-            shared:log("Tournament info requested by pid ~p", [Pid]),
-            Pid ! {tournament_status, self(), {0, complete, [], error}},
-            manager_run(Tournaments, Players, PendingTournaments);
+	{tournament_start, Tid, Pid} ->
+		log("Tournament ~p has begun.~n"),
+		manager_run([{Tid, in_progress, undefined, []}]++Tournaments, Players, PendingTournaments--lists:keyfind(Tid, 1, PendingTournaments));
+	{tournament_complete, Tid, Winner}->
+		manager_run(lists:keyreplace(Tid, 1, Tournaments, {Tid, complete, Winner, []}), Players, PendingTournaments);
+	{tournament_info, Pid, Tid}->
+            case lists:keyfind(Tid, 1, Tournaments) of
+		    false ->
+			    case lists:keyfind(Tid, 1, PendingTournaments) of
+				    false ->
+					    log("Tournament requested by ~p was not found.~n", [Pid]),
+					    manager_run(Tournaments, Players, PendingTournaments);
+				    Tourn ->
+					    log("Tournament request by ~p is ~p.~n", [Pid, Tourn]),
+					    Pid ! {tournament_status, self(), Tourn},
+			   		    manager_run(Tournaments, Players, PendingTournaments)
+			   end;
+		    Tourn ->
+			log("Tournament request by ~p is ~p.~n", [Pid, Tourn]),
+		 	Pid ! {tournament_status, self(), Tourn},
+			manager_run(Tournaments, Players, PendingTournaments)
+	    end;
         {Other, Pid, Username, Data} ->
             shared:log("Player ~p @ ~p sent us garbage (type = ~p): ~p",
                 [Username, Pid, Other, Data]),
