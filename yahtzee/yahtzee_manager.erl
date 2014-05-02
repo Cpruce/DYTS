@@ -87,7 +87,7 @@ manager_run(Tournaments, Players, PendingTournaments)->
 		log("Pid ~p asked for ~p players.~n", [Pid, NumPlayers]),
 		Pid ! {add_players, TournPlayers},
 		manager_run(Tournaments, Players, PendingTournaments);
-	{tournament_start, Tid, Pid} ->
+	{tournament_begin, _Pid, Tid} ->
 		log("Tournament ~p has begun.~n"),
 		manager_run([{Tid, in_progress, undefined, []}]++Tournaments, Players, PendingTournaments--lists:keyfind(Tid, 1, PendingTournaments));
 	{tournament_complete, Tid, Winner}->
@@ -163,3 +163,18 @@ send_all_tm([{_, Pid, _, _}|T], M) ->
     Pid ! M,
     send_all_tm(T, M).
 
+% monitor players to make sure they are still in the game
+monitor_player(Name, Pid, ParentPid) -> 
+	erlang:monitor(yahtzee_player, Pid), %{RegName, Node}
+	receive
+	
+		{'DOWN', _Ref, process, _Pid, normal} ->
+
+			ParentPid ! {self(), normal, Name};
+
+		{'DOWN', _Ref, process, _Pid, _Reason} ->
+
+			ParentPid ! {self(), missing, Name}
+	
+	end.
+ 
