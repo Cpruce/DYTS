@@ -24,15 +24,15 @@ tournament_start(Parent, Tid, NumPlayers, Gpm) ->
     tournament_wait(Parent, Tid, NumPlayers, Gpm, [], []).
 
 bracket_setup(Parent, Tid, NumPlayers, Gpm, [], Bracket)->
-	tournament_run(Parent, Tid, 1, NumPlayers, Gpm, Bracket);
+	tournament_run(Parent, Tid, NumPlayers, Gpm, Bracket);
 bracket_setup(Parent, Tid, NumPlayers, Gpm, [P1], Bracket)->
-	tournament_run(Parent, Tid, 1, NumPlayers, Gpm, Bracket++[{P1, bye}], 1);
+	tournament_run(Parent, Tid, NumPlayers, Gpm, Bracket++[{P1, bye}], 1);
 bracket_setup(Parent, Tid, NumPlayers, Gpm, [P1,P2|Players], Bracket)->
 	bracket_setup(Parent, Tid, NumPlayers, Gpm, Players, Bracket++[{P1, P2}]).
 
-tournament_run(Parent, Tid, Gid, NumPlayers, Gpm, [])->
+tournament_run(Parent, Tid, NumPlayers, Gpm, [], NextRound)->
 	receive
-		{}->
+		{game_over, Winner, Loser}->
 			;
 		Other ->
 
