@@ -5,7 +5,7 @@
 %% @doc _D157R18U73D_Y4H7533_
 -module(tournament_manager).
 
--import(shared).
+-import(shared,[pred/1, pred_perms/2, timestamp/0, log/1, log/2, shuffle/1]).
 %% ====================================================================
 %%                             Public API
 %% ====================================================================
@@ -20,7 +20,7 @@
 % Run a full tournament with the given list of players, reporting results
 % back to the Parent pid.
 tournament_start(Parent, Tid, NumPlayers, Gpm) ->
-    Parent ! {request_players, NumPlayers},
+    Parent ! {request_players, self(), NumPlayers},
     tournament_wait(Parent, Tid, NumPlayers, Gpm, [], []).
 
 
@@ -39,17 +39,17 @@ tournament_wait(Parent, Tid, NumPlayers, Gpm, Players, Pending) ->
                     tournament_wait(Parent, Tid, NumPlayers, Gpm, Players_, Pending_);
                 bad ->
                     Pid ! {end_tournament, Parent, Username, Tid},
-                    Parent ! {request_players, 1},
+		    Parent ! {request_players, self(), 1},
                     Pending_ = remove_user(Username, Pending),
                     tournament_wait(Parent, Tid, NumPlayers, Gpm, Players, Pending_);
                 error ->
                     % no such user
                     Pid ! {end_tournament, Parent, Username, Tid},
-                    Parent ! {request_players, 1},
+		    Parent ! {request_players, self(), 1},
                     tournament_wait(Parent, Tid, NumPlayers, Gpm, Players, Pending)
             end
     after 1000 ->
-            Parent ! {request_players, NumPlayers - length(Players)},
+	    Parent ! {request_players, self(), NumPlayers - length(Players)},
             tournament_wait(Parent, Tid, NumPlayers, Gpm, Players, [])
     end.
 

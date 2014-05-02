@@ -5,8 +5,8 @@
 %% @doc _D157R18U73D_Y4H7533_
 -module(yahtzee_manager).
 
--import(shared).
--import(tournament_manager).
+-import(shared,[pred/1, pred_perms/2, timestamp/0, log/1, log/2, shuffle/1]).
+-import(tournament_manager, [tournament_start/4]).
 %% ====================================================================
 %%                             Public API
 %% ====================================================================
@@ -82,7 +82,12 @@ manager_run(Tournaments, Players, PendingTournaments)->
             shared:log("Pid ~p tried to log in as user ~p, but provided authentication for "
                 "user ~p", [Pid, Username, Username_]),
             manager_run(Tournaments, Players, PendingTournaments);
-        {tournament_info, Pid, _}->
+    	{request_players, Pid, NumPlayers}->
+		TournPlayers = get_n_players(Players, NumPlayers, []),
+		log("Pid ~p asked for ~p players.~n", [Pid, NumPlayers]),
+		Pid ! {add_players, TournPlayers},
+		manager_run(Tournaments, Players, PendingTournaments);
+    	{tournament_info, Pid, _}->
             % FIXME
             shared:log("Tournament info requested by pid ~p", [Pid]),
             Pid ! {tournament_status, self(), {0, complete, [], error}},
@@ -99,6 +104,18 @@ manager_run(Tournaments, Players, PendingTournaments)->
             shared:log("Unparseable message: ~p", [Other]),
             manager_run(Tournaments, Players, PendingTournaments)
     end.
+
+% get # player names
+get_n_players([], X, _Acc) when X > 0 -> [];
+get_n_players(_Players, 0, Acc) -> Acc;
+get_n_players(Players, N, Acc) ->
+	RandPlayer = lists:nth(crypto:rand_uniform(1, length(Players)), Players),
+	case lists:member(RandPlayer, Players) of
+		true ->
+			get_n_players(Players, N, Acc);
+		false ->
+			get_n_players(Players, N-1, [RandPlayer]++Acc)
+	end.
 
 % validate_password(Players, Username, Password)
 validate_password([], _, _) ->
