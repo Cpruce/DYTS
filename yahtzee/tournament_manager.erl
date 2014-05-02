@@ -23,8 +23,40 @@ tournament_start(Parent, Tid, NumPlayers, Gpm) ->
     Parent ! {request_players, self(), NumPlayers},
     tournament_wait(Parent, Tid, NumPlayers, Gpm, [], []).
 
+bracket_setup(Parent, Tid, NumPlayers, Gpm, [], Bracket)->
+	tournament_run(Parent, Tid, 1, NumPlayers, Gpm, Bracket);
+bracket_setup(Parent, Tid, NumPlayers, Gpm, [P1], Bracket)->
+	tournament_run(Parent, Tid, 1, NumPlayers, Gpm, Bracket++[{P1, bye}], 1);
+bracket_setup(Parent, Tid, NumPlayers, Gpm, [P1,P2|Players], Bracket)->
+	bracket_setup(Parent, Tid, NumPlayers, Gpm, Players, Bracket++[{P1, P2}]).
+
+tournament_run(Parent, Tid, Gid, NumPlayers, Gpm, [])->
+	receive
+		{}->
+			;
+		Other ->
+
+	end;
+tournament_run(Parent, Tid, Gid, NumPlayers, Gpm, Bracket)->
+	spawn(tournament_manager, bracket_run, [Parent, Tid, Gid, Bracket]),
+	tournament_run(Parent, Tid, NumPlayers, NumPlayers, Gpm, []).	
+
+bracket_run(Parent, Tid, Gid, [])->
+bracket_run(Parent, Tid, Gid, [{P1, bye}|Bracket])->
+	%Parent ! {some_message signifying P1 won}
+bracket_run(Parent, Tid, Gid, [{P1, P2}|Bracket])->
+	spawn(game_manager, serve_game, [P1, P2, Tid, Gid]),
+	bracket_run(Parent, Tid, Gid+1, Bracket). 
+	%	
 
 tournament_wait(Parent, Tid, NumPlayers, Gpm, Players, Pending) ->
+    case length(Pending) == NumPlayers of
+	    true ->
+		    log("The required number of players have joined"),
+		    bracket_setup(Parent, Tid, NumPlayers, Gpm, Pending, []);
+	    false ->
+		    log("Waiting for players to join.~n")
+    end,
     receive
         % internal
         {add_players, New} ->

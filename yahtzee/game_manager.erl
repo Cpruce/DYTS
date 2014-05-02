@@ -9,7 +9,7 @@
 %% ====================================================================
 %%                             Public API
 %% ====================================================================
--export([serve_game/6]).
+-export([serve_game/4]).
 %% ====================================================================
 %%                             Constants
 %% ====================================================================
@@ -17,11 +17,11 @@
 %%                             Functions
 %% ====================================================================
 
-serve_game(P1, P1Pid, P2, P2Pid, Tid, Gid)->
+serve_game(P1, P2, Tid, Gid)->
 	log("Beginning game between ~p and ~p.~n", [P1, P2]),
 	% spawns two processes to monitor P1 and P2
-	spawn(fun() -> monitor_player(P1, P1Pid, self()) end),
-	spawn(fun() -> monitor_player(P2, P2Pid, self()) end),		
+	spawn(fun() -> monitor_player(P1, element(2, P1), self()) end),
+	spawn(fun() -> monitor_player(P2, element(2, P2), self()) end),		
 	turn(0, P1, P2, [], [], Tid, Gid).
 
 get_score([])-> 0;
