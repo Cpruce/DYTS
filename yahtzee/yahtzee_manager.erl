@@ -36,11 +36,14 @@ main(Params)->
     % Start with no active tournament managers, and zero players.
     manager_run([], [], []).
 
-% Tournaments is a list of tuples: {Tid, TournamentPid, PlayerList}
-%  The PlayerList here is a list of usernames
+% Tournaments is a list of tuples: {Tid, TournamentPid, CallerPid, PlayerList}
+%  The PlayerList here is a list of usernames.
+% Same with PendingTournaments; it represents tournaments we've been asked to run but which have
+%  not yet started.
 % Players is a list of tuples:
-%   {Username, MaybeToken, Status, Record} - username, login token or null if logged out,
+%   {Username, Password, MaybeToken, Status, Record} - username, login token or null if logged out,
 %                                       status is logged_in or logged_out
+% TODO: add completed tournaments field
 manager_run(Tournaments, Players, PendingTournaments)->
     receive
         % Data is a tuple {num-players, games-per-match}
@@ -52,11 +55,28 @@ manager_run(Tournaments, Players, PendingTournaments)->
             manager_run(Tournaments, Players, [{Tid, Pid, NewTourn}|PendingTournaments]);
         {login, Pid, Username, {Username, Password}} ->
             % TODO: existing players
-            Password,
-            shared:log("Player ~p joined, giving them login token ~p"),
+            case validate_password(Players, Username, Password) of
+                ok ->
+                    shared:log("Player ~p joined, giving them login token ~p");
+                bad ->
+                    shared:log("Player ~p tried to log  in with the wrong password!"),
+                    manager_run(Tournaments, Players, PendingTournaments);
+                error ->
+                    shared:log("Adding player ~p.")
+            end,
+            % We will only get here if the player info is valid
+            case logged_in(Players, Username) of
+                true ->
+                    %TODO: make user rejoin tournaments
+                    send_all_tm(Tournaments, {invalidate, Username});
+                false ->
+                    %TODO: same
+                    shared:log("Do stuff here!")
+            end,
             Token = make_ref(),
             Pid ! {logged_in, self(), Pid, Token},
-            Players_ = {Username, Token, logged_in, []},
+            % log_in will add the player if they don't exist, and update them if they do.
+            Players_ = log_in(Players, Username, Password, Token),
             manager_run(Tournaments, Players_, PendingTournaments);
         {login, Pid, Username, {Username_, _}} ->
             shared:log("Pid ~p tried to log in as user ~p, but provided authentication for "
@@ -79,3 +99,33 @@ manager_run(Tournaments, Players, PendingTournaments)->
             shared:log("Unparseable message: ~p", [Other]),
             manager_run(Tournaments, Players, PendingTournaments)
     end.
+
+% validate_password(Players, Username, Password)
+validate_password([], _, _) ->
+    error;
+validate_password([{Username, Password_, _, _, _}|_], Username, Password) ->
+    case (Password_ == Password) of
+        true -> ok;
+        false -> bad
+    end;
+validate_password([_|T], Username, Password) ->
+    validate_password(T, Username, Password).
+
+logged_in([], _) -> error;
+logged_in([{Username, _, _, logged_in, _}|_], Username) -> ok;
+logged_in([{Username, _, _, logged_out, _}|_], Username) -> ok;
+logged_in([_|T], Username) -> logged_in(T, Username).
+
+log_in([], Username, Password, Token) ->
+    [{Username, Password, Token, logged_in, []}];
+log_in([{Username, Password, _, _, Record}|T] , Username, Password, Token) ->
+    [{Username, Password, Token, logged_in, Record}|T];
+log_in([H|T], Username, Password, Token) ->
+    [H|log_in(T, Username, Password, Token)].
+
+% Tournaments is a list of tuples: {Tid, TournamentPid, CallerPid, PlayerList}
+send_all_tm([], _) -> ok;
+send_all_tm([{_, Pid, _, _}|T], M) ->
+    Pid ! M,
+    send_all_tm(T, M).
+
