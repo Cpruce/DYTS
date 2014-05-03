@@ -139,77 +139,78 @@ reroll(Subset) ->
 scoring_phase([X, X, X, X, X], Patterns) -> 
 	% Yahtzee
 	log("Yahtzee! Mark it 50.~n"),
-	extra_yahtzee_bonus({50, [X, X, X, X, X]}, Patterns);
+	{50, [X, X, X, X, X]};
 scoring_phase([A, B, C, D, E], Patterns) when (E == D + 1) and (D == C + 1) and
 		(C == B + 1) and (B == A + 1) ->
 	% Large Straight
 	log("Large straight! That's 40.~n"),
-	extra_yahtzee_bonus({40, [A, B, C, D, E]}, Patterns);
+	({40, [A, B, C, D, E]};
 scoring_phase([A, B, C, D, E], Patterns) when (E == D + 1) and (D == C + 1) and
 		(C == B + 1) ->
 	log("Small straight! 30 isn't too small relatively.~n"),
-	extra_yahtzee_bonus({30, [A, B, C, D, E]}, Patterns);
+	({30, [A, B, C, D, E]};
 scoring_phase([A, B, C, D, E], Patterns) when (D == C + 1) and (C == B + 1) and 
 		(B == A + 1) ->
 	log("Small straight! 30 isn't too small relatively.~n"),
-	extra_yahtzee_bonus({30, [A, B, C, D, E]}, Patterns);
+	({30, [A, B, C, D, E]};
 scoring_phase([A, A, A, B, B], Patterns) -> 
 	% Full House 
 	log("Full house. 25 shall be given.~n"),
-	extra_yahtzee_bonus({25, [A, A, A, B, B]}, Patterns);
+	({25, [A, A, A, B, B]};
 scoring_phase([B, B, A, A, A], Patterns) ->
 	% Full House
 	log("Full house. 25 shall be given.~n"),
-	extra_yahtzee_bonus({25, [B, B, A, A, A]}, Patterns);
+	({25, [B, B, A, A, A]};
 scoring_phase([X, X, X, X, Y], Patterns) ->
 	Sum = 4 * X + Y,
 	log("Four of a kind. Sum is ~p.~n", [Sum]),	
-	extra_yahtzee_bonus({Sum, [X, X, X, X, Y]}, Patterns);
+	({Sum, [X, X, X, X, Y]};
 scoring_phase([Y, X, X, X, X], Patterns) ->
 	Sum = 4 * X + Y,
 	log("Four of a kind. Sum is ~p.~n", [Sum]),	
-	extra_yahtzee_bonus({Sum, [Y, X, X, X, X]}, Patterns);
+	({Sum, [Y, X, X, X, X]};
 scoring_phase([X, X, X, Y, Z], Patterns) ->
 	Sum = 3 * X + Y + Z,
 	log("Three of a kind. Sum is ~p.~n", [Sum]),	
-	extra_yahtzee_bonus({Sum, [X, X, X, Y, Z]}, Patterns);
+	({Sum, [X, X, X, Y, Z]};
 scoring_phase([Y, X, X, X, Z], Patterns) ->
 	Sum = 3 * X + Y + Z,
 	log("Three of a kind. Sum is ~p.~n", [Sum]),	
-	extra_yahtzee_bonus({Sum, [Y, X, X, X, Z]}, Patterns);
+	({Sum, [Y, X, X, X, Z]};
 scoring_phase([Y, Z, X, X, X], Patterns) ->
 	Sum = 3 * X + Y + Z,
 	log("Three of a kind. Sum is ~p.~n", [Sum]),	
-	extra_yahtzee_bonus({Sum, [Y, Z, X, X, X]}, Patterns);
+	({Sum, [Y, Z, X, X, X]};
 scoring_phase([Y, Z, W, X, X], Patterns) ->
 	Sum = 2 * X + W + Y + Z,
 	log("Two of a kind. Sum is ~p.~n", [Sum]),	
-	extra_yahtzee_bonus({Sum, [Y, Z, W, X, X]}, Patterns);
+	({Sum, [Y, Z, W, X, X]};
 scoring_phase([Y, Z, X, X, W], Patterns) ->
 	Sum = 2 * X + W + Y + Z,
 	log("Two of a kind. Sum is ~p.~n", [Sum]),	
-	extra_yahtzee_bonus({Sum, [Y, Z, X, X, W]}, Patterns);
+	({Sum, [Y, Z, X, X, W]};
 scoring_phase([Y, X, X, W, Z], Patterns) ->
 	Sum = 2 * X + W + Y + Z,
 	log("Two of a kind. Sum is ~p.~n", [Sum]),	
-	extra_yahtzee_bonus({Sum, [Y, X, X, W, Z]}, Patterns);
+	({Sum, [Y, X, X, W, Z]};
 scoring_phase([X, X, W, Y, Z], Patterns) ->
 	Sum = 2 * X + W + Y + Z,
 	log("Two of a kind. Sum is ~p.~n", [Sum]),	
-	extra_yahtzee_bonus({Sum, [X, X, W, Y, Z]}, Patterns);
+	({Sum, [X, X, W, Y, Z]};
 scoring_phase([R1, R2, R3, R4, R5], Patterns)->
 	Sum = R1 + R2 + R3 + R4 + R5,
 	log("No pattern. Sum is ~p.~n", [Sum]),
-	extra_yahtzee_bonus({Sum, [R1, R2, R3, R4, R5]}, Patterns).
+	({Sum, [R1, R2, R3, R4, R5]}.
 
-extra_yahtzee_bonus({Sum, [A, B, C, D, E]}, [])->
-	{Sum, [A, B, C, D, E]};
-extra_yahtzee_bonus({Sum, [A, B, C, D, E]}, [{Sum, [A, B, C, D, E]}|Patterns])->
-	case Sum >= 50 of
-		true ->
-			{Sum+100, [A, B, C, D, E]};
-		false ->
-			{Sum, [A, B, C, D, E]}
-	end;
-extra_yahtzee_bonus({Sum, [A, B, C, D, E]}, Patterns)->
-	extra_yahtzee_bonus({Sum, [A, B, C, D, E]}, tl(Patterns)).
+%extra_yahtzee_bonus(_, [], ScoreCard, [])-> [];
+%extra_yahtzee_bonus({Sum, [A, B, C, D, E]}, [], ScoreCard, Acc)->
+%	extra_yahtzee_bonus(hd(Acc), tl(Acc), ScoreCard, []);
+%extra_yahtzee_bonus({Sum, [A, B, C, D, E]}, [{Sum, [A, B, C, D, E]}|Patterns], ScoreCard, Acc)->
+%	case Sum >= 50 of
+%		true ->
+%			extra_yahtzee_bonus(hd(Acc), tl(Acc)++Patterns;
+%		false ->
+%			{Sum, [A, B, C, D, E]}
+%	end;
+%extra_yahtzee_bonus({Sum, [A, B, C, D, E]}, Patterns, ScoreCard, Acc)->
+%	extra_yahtzee_bonus({Sum, [A, B, C, D, E]}, tl(Patterns), ScoreCard, Acc++[hd(Patterns)]).
