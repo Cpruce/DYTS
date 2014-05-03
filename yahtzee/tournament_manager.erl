@@ -52,6 +52,13 @@ tournament_run(Parent, Tid, Mid, NumPlayers, Gpm, [], Winners)->
 			log("~p won against ~p in match ~p in tournament ~p.~n", [Winner, Loser, RMid, Tid]),
 			Loser ! {end_tournament, Tid},
 			tournament_run(Parent, Tid, Mid, NumPlayers-1, Gpm, [], Winners++[Winner]);
+        {invalidate, Username} ->
+            Winners_ = invalidate_user(Winners, Username),
+            tournament_run(Parent, Tid, Mid, NumPlayers, Gpm, [], Winners_);
+        {back, Username, Pid, Token} ->
+            Winners_ = revalidate_user(Winners, Username, Pid, Token),
+            tournament_run(Parent, Tid, Mid, NumPlayers, Gpm, [], Winners_);
+
 		Other ->
 			log("Received something unparseable. ~p~n", [Other])
 	end;
@@ -68,11 +75,11 @@ bracket_run(Parent, Tid, Mid, [{P1, P2}|Bracket])->
 	bracket_run(Parent, Tid, Mid+1, Bracket). 
 
 tournament_wait(Parent, Tid, NumPlayers, Gpm, Players, Pending) ->
-    case length(Pending) == NumPlayers of
+    case length(Players) == NumPlayers of
 	    true ->
 		    log("The required number of players have joined. Tournament ~p about to start.~n", [Tid]),
 		    Parent ! {tournament_begin, self(), Tid},
-		    bracket_setup(Parent, Tid, 0, NumPlayers, Gpm, Pending, []);
+		    bracket_setup(Parent, Tid, 0, NumPlayers, Gpm, Players, []);
 	    false ->
 		    log("Waiting for players to join.~n")
     end,
@@ -81,6 +88,26 @@ tournament_wait(Parent, Tid, NumPlayers, Gpm, Players, Pending) ->
         {add_players, New} ->
             send_to_each(New, start_tournament, Tid),
             tournament_wait(Parent, Tid, NumPlayers, Gpm, Players, Pending ++ New);
+        {invalidate, Username} ->
+            case is_ready(Players, Username) of
+                true ->
+                    Players_ = remove_user(Players, Username),
+                    Parent ! {request_players, 1},
+                    tournament_wait(Parent, Tid, NumPlayers, Gpm, Players_, Pending);
+                false ->
+                    Pending_ = invalidate_user(Pending, Username),
+                    tournament_wait(Parent, Tid, NumPlayers, Gpm, Players, Pending_)
+            end;
+        {back, Username, Pid, Token} ->
+            case is_ready(Pending, Username) of
+                true ->
+                    Pid ! {start_tournament, self(), Username, Tid},
+                    Pending_ = revalidate_user(Pending, Username, Pid, Token),
+                    tournament_wait(Parent, Tid, NumPlayers, Gpm, Players, Pending_);
+                false ->
+                    % we don't even remember this person.
+                    tournament_wait(Parent, Tid, NumPlayers, Gpm, Players, Pending)
+            end;
         % external
         {accept_tournament, Pid, Username, {Tid, Ticket}} ->
             case validate_ticket(Pending, Username, Ticket) of
@@ -121,3 +148,17 @@ send_to_each([{Username, Pid, _}|T], Type, Data) ->
 remove_user([], _) -> [];
 remove_user([{Username, _, _}|T], Username) -> T;
 remove_user([H|T], Username) -> [H|remove_user(T, Username)].
+
+invalidate_user([], _) -> [];
+invalidate_user([{Username, _, _}|T], Username) ->
+    [{Username, none, none}|T];
+invalidate_user([H|T], Username) -> [H|invalidate_user(T, Username)].
+
+revalidate_user([], _, _, _) -> [];
+revalidate_user([{Username, _, _}|T], Username, Pid, Token) ->
+    [{Username, Pid, Token}|T];
+revalidate_user([H|T], Username, Pid, Token) -> [H|revalidate_user(T, Username, Pid, Token)].
+
+is_ready([], _) -> false;
+is_ready([{Username, _, _}|_], Username) -> true;
+is_ready([_|T], Username) -> is_ready(T, Username).

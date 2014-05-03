@@ -54,7 +54,6 @@ manager_run(Tournaments, Players, PendingTournaments)->
                 end),
             manager_run(Tournaments, Players, [{Tid, Pid, NewTourn}|PendingTournaments]);
         {login, Pid, Username, {Username, Password}} ->
-            % TODO: existing players
             case validate_password(Players, Username, Password) of
                 ok ->
                     shared:log("Player ~p joined, giving them login token ~p");
@@ -64,17 +63,17 @@ manager_run(Tournaments, Players, PendingTournaments)->
                 error ->
                     shared:log("Adding player ~p.")
             end,
+            Token = make_ref(),
+            Pid ! {logged_in, self(), Username, Token},
             % We will only get here if the player info is valid
             case logged_in(Players, Username) of
                 true ->
-                    %TODO: make user rejoin tournaments
-                    send_all_tm(Tournaments, {invalidate, Username});
+                    send_all_tm(Tournaments, {invalidate, Username}),
+                    send_all_tm(Tournaments, {back, Username, Pid, Token});
                 false ->
-                    %TODO: same
-                    shared:log("Do stuff here!")
+                    send_all_tm(Tournaments, {back, Username, Pid, Token})
             end,
-            Token = make_ref(),
-            Pid ! {logged_in, self(), Pid, Token},
+            spawn(yahtzee_manager, monitor_player, [Username, Pid, self()]),
             % log_in will add the player if they don't exist, and update them if they do.
             Players_ = log_in(Players, Username, Password, Token),
             manager_run(Tournaments, Players_, PendingTournaments);
@@ -83,10 +82,10 @@ manager_run(Tournaments, Players, PendingTournaments)->
                 "user ~p", [Pid, Username, Username_]),
             manager_run(Tournaments, Players, PendingTournaments);
     	{request_players, Pid, NumPlayers}->
-		TournPlayers = get_n_players(Players, NumPlayers, []),
-		log("Pid ~p asked for ~p players.~n", [Pid, NumPlayers]),
-		Pid ! {add_players, TournPlayers},
-		manager_run(Tournaments, Players, PendingTournaments);
+            TournPlayers = get_n_players(Players, NumPlayers, []),
+            log("Pid ~p asked for ~p players.~n", [Pid, NumPlayers]),
+            Pid ! {add_players, TournPlayers},
+            manager_run(Tournaments, Players, PendingTournaments);
 	{tournament_begin, _Pid, Tid} ->
 		log("Tournament ~p has begun.~n"),
 		manager_run([{Tid, in_progress, undefined, []}]++Tournaments, Players, PendingTournaments--lists:keyfind(Tid, 1, PendingTournaments));
@@ -109,6 +108,11 @@ manager_run(Tournaments, Players, PendingTournaments)->
 		 	Pid ! {tournament_status, self(), Tourn},
 			manager_run(Tournaments, Players, PendingTournaments)
 	    end;
+        {_, missing, Username} ->
+            shared:log("Player ~p has vanished.", [Username]),
+            send_all_tm(Tournaments, {invalidate, Username}),
+            Players_ = log_out(Players, Username),
+			manager_run(Tournaments, Players_, PendingTournaments);
         {Other, Pid, Username, Data} ->
             shared:log("Player ~p @ ~p sent us garbage (type = ~p): ~p",
                 [Username, Pid, Other, Data]),
@@ -156,6 +160,13 @@ log_in([{Username, Password, _, _, Record}|T] , Username, Password, Token) ->
     [{Username, Password, Token, logged_in, Record}|T];
 log_in([H|T], Username, Password, Token) ->
     [H|log_in(T, Username, Password, Token)].
+
+log_out([], _) -> [];
+log_out([{Username, Password, _, logged_in, Record}|T], Username) ->
+    [{Username, Password, none, logged_out, Record}|T];
+log_out([H|T], Username) ->
+    [H|log_out(T, Username)].
+
 
 % Tournaments is a list of tuples: {Tid, TournamentPid, CallerPid, PlayerList}
 send_all_tm([], _) -> ok;
