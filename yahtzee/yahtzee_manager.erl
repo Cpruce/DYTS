@@ -30,9 +30,9 @@ main(Params)->
     % format microseconds of timestamp to get an
     % effectively-unique node name
     net_kernel:start([EName, shortnames]),
-    shared:log("name is ~p", [Name]),
+    log("name is ~p", [Name]),
     register(yahtzee_manager, self()),
-    shared:log("node() is ~p~n", [node()]),
+    log("node() is ~p~n", [node()]),
     % Start with no active tournament managers, and zero players.
     manager_run([], [], []).
 
