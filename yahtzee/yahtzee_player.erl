@@ -64,12 +64,12 @@ logged_in(Name, Pwd, TMs, Tournaments, LoginTicket)->
 			logged_in(Name, Pwd, TMs, Tournaments--[Tid], LoginTicket);
 		{play_request, Pid, {Ref, Tid, Gid, RollNum, Dice, ScoreCard, OppScoreCard}}->
 			log("Received roll of ~p on roll ~p in game ~p in tournament ~p. Player has ~p and opponent has ~p.~n", [Dice, RollNum, Gid, Tid, ScoreCard, OppScoreCard]),
-			{Box, Pattern} = find_max({0, [0, 0, 0, 0, 0]}, lists:map(fun(X)->scoring_process(X) end, pred_perms(Dice, fun shared:pred/1))),
+			{Box, Pattern} = find_max(0, lists:map(fun(X)->scoring_process(X) end, pred_perms(Dice, fun shared:pred/1))),
 			Keepers = choose_keepers(lists:sort(Dice)),
-			case Box == 50 of 
+			case Box >= 30 of 
 				true ->
 					% no need to continue
-					ScoreCardLine = RollNum;
+					ScoreCardLine = Box;
 				false ->
 					ScoreCardLine = 0
 			end,
@@ -82,10 +82,10 @@ logged_in(Name, Pwd, TMs, Tournaments, LoginTicket)->
 
 % find max score from each permutation of the dice
 find_max(Max, [])-> Max;
-find_max(Max, [{Box, Pattern}|Perms])->
-	case element(1, Max) < Box of
+find_max(Max, [Box|Perms])->
+	case Max < Box of
 		true ->
-			find_max({Box, Pattern}, Perms);
+			find_max(Box, Perms);
 		false ->
 			find_max(Max, Perms)
 	end.

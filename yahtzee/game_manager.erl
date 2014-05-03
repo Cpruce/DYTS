@@ -22,10 +22,10 @@ serve_game(Parent, P1, bye, Tid, Mid)->
 	Parent ! {match_over, P1, bye, Mid, Tid};
 serve_game(Parent, P1, P2, Tid, Mid)->
 	log("Beginning game between ~p and ~p.~n", [P1, P2]),
-	turn(Parent, 0, P1, P2, [], [], Tid, Mid).
+	turn(Parent, 0, P1, P2, [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0], [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0], Tid, Mid).
 
-get_score([])-> 0;
-get_score([{Box, _Pattern}|ScoreCard]) ->
+get_score([_X])-> 0;
+get_score([Box|ScoreCard]) ->
 	Box+get_score(ScoreCard).
 
 % Game over, check winner
@@ -56,13 +56,26 @@ turn(Parent, 13, P1, P2, P1ScoreCard, P2ScoreCard, Tid, Mid)->
 	log("Last turn between ~p and ~p.~n", [P1, P2]),
 	{P1Box, P1Pattern} = assembly_phase(P1, P1ScoreCard, P2ScoreCard, [], Tid, Mid, 13, 0),
 	{P2Box, P2Pattern} = assembly_phase(P2, P2ScoreCard, P1ScoreCard, [], Tid, Mid, 13, 0),
-	check_winner(Parent, P1, P2, P1ScoreCard++[{P1Box, P1Pattern}], P2ScoreCard++[{P2Box, P2Pattern}], Tid, Mid);
+	NewP1SC = replace_nth(13, 1, P1Box, length(P1ScoreCard), P1ScoreCard),
+        NewP2SC = replace_nth(13, 1, P2Box, length(P2ScoreCard), P2ScoreCard),	
+	check_winner(Parent, P1, P2, NewP1SC, NewP2SC, Tid, Mid);
 turn(Parent, RollNum, P1, P2, P1ScoreCard, P2ScoreCard, Tid, Mid)->
 	log("Turn ~p between ~p and ~p.~n", [RollNum, P1, P2]),
 	{P1Box, P1Pattern} = assembly_phase(P1, P1ScoreCard, P2ScoreCard, [], Tid, Mid, RollNum, 0),
 	{P2Box, P2Pattern} = assembly_phase(P2, P2ScoreCard, P1ScoreCard, [], Tid, Mid, RollNum, 0),
- 	turn(Parent, RollNum+1, P1, P2, P1ScoreCard++[{P1Box, P1Pattern}], P2ScoreCard++[P2Box, P2Pattern], Tid, Mid).
+ 	NewP1SC = replace_nth(RollNum, 1, P1Box, length(P1ScoreCard), P1ScoreCard),
+        NewP2SC = replace_nth(RollNum, 1, P2Box, length(P2ScoreCard), P2ScoreCard),	
+	turn(Parent, RollNum+1, P1, P2, NewP1SC, NewP2SC, Tid, Mid).
 
+replace_nth(n, n, elem, ListLength, List)->
+	[elem]++tl(List);
+replace_nth(n, m, elem, ListLength, List)->
+	case n >= ListLength of 
+		true ->
+			error;
+		false ->
+			replace_nth(n, m+1, elem, ListLength, tl(List))
+	end.
 % separate dice kept and the dice to be rerolled
 prune_dice([], []) -> [];
 prune_dice(Dice, [true | Keepers]) ->
@@ -76,10 +89,15 @@ assembly_phase(Player, ScoreCard, OppScoreCard, Dice, Tid, Mid, RollNum, 6) ->
 	Player ! {play_request, self(), {make_ref(), Tid, Mid, RollNum, Dice, ScoreCard, OppScoreCard}},
 	receive
 		{play_action, PlayerPid, {Ref, Tid, Mid, RollNum, Keepers, ScoreCardLine}}->
-		        DiceKept = prune_dice(Dice, Keepers),
-			SubsetExcl = Dice--DiceKept,	
-			NewDice = lists:sort(DiceKept++reroll(SubsetExcl)),
-			scoring_process(Player, ScoreCard, OppScoreCard, NewDice, Tid, Mid, RollNum);
+		        case ScoreCardLine > 0 of
+				true ->
+					log("Player ~p decided to stay on ~p.~n", [Player, Dice]),
+					scoring_phase(Player, ScoreCard, OppScoreCard, Dice, Tid, Mid, RollNum);
+				false ->
+					DiceKept = prune_dice(Dice, Keepers),
+					SubsetExcl = Dice--DiceKept,	
+					NewDice = lists:sort(DiceKept++reroll(SubsetExcl)),
+					scoring_process(Player, ScoreCard, OppScoreCard, NewDice, Tid, Mid, RollNum);
 		_ -> 
 			log("Unexpected message at roll")
 	end;
