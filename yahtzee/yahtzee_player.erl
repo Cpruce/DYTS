@@ -37,8 +37,9 @@ main(Params)->
     player_begin(Name, Pwd, [list_to_atom(TM) || TM <- TMs], []).
 
 
-player_begin(Name, Pwd, [], []) ->
-    log("No more tournaments to talk to.");
+player_begin(Name, _, [], []) ->
+    log("No more tournaments to talk to."),
+    log("Player ~p exiting.", [Name]);
 % Exit here.
 
 player_begin(Name, Pwd, [], Pids) ->
@@ -56,7 +57,7 @@ player_wait(Name, Pwd, Pids) ->
         {'DOWN', _, process, Pid, Info} ->
             shared:log("Process ~p went down: ~p.", [Pid, Info]),
             [{Pid, TM}] = [{Pid_, TM} || {Pid_, TM} <- Pids, Pid_ == Pid],
-            Rest = [{Pid_, TM} || {Pid_, TM} <- Pids, Pid_ /= Pid],
+            Rest = [{Pid_, TM_} || {Pid_, TM_} <- Pids, Pid_ /= Pid],
             case Info of
                 noproc ->
                     log("Process never existed! Not restarting"),
@@ -73,9 +74,10 @@ player_wait(Name, Pwd, Pids) ->
 log_in(Name, Pwd, TM) ->
     {yahtzee_manager, TM} !  {login, self(), Name, {Name, Pwd}},
     receive
-        {logged_in, Pid, Name, LoginTicket}->
+        {logged_in, _, Name, LoginTicket}->
+            log("Logged in to TM ~p with ticket ~p", [TM, LoginTicket]),
             logged_in(Name, Pwd, TM, LoginTicket, []);
-        {logged_in, Pid, Name_, LoginTicket}->
+        {logged_in, _, Name_, LoginTicket}->
             log("Yahtzee manager things we're named ~p. Rolling with it ...", [Name_]),
             logged_in(Name_, Pwd, TM, LoginTicket, []);
         Other ->
@@ -89,8 +91,9 @@ logged_in(Name, Pwd, TM, Ticket, Tournaments)->
         % Data is a single tournament identifier
         {start_tournament, Pid, Tid} ->
             log("Received notification that tournament ~p is starting.~n", [Tid]),
+            Pid ! {accept_tournament, Name, Pwd, {Tid, Ticket}},
             logged_in(Name, Pwd, TM, Ticket, Tournaments++[Tid]);
-        {end_tournament, Pid, Tid} ->
+        {end_tournament, _, Tid} ->
             log("Received notification that tournament ~p is ending.~n", [Tid]),
             logged_in(Name, Pwd, TM, Ticket, Tournaments--[Tid]);
         {play_request, Pid, {Ref, Tid, Gid, RollNum, Dice, ScoreCard, OppScoreCard}}->
@@ -104,7 +107,7 @@ logged_in(Name, Pwd, TM, Ticket, Tournaments)->
                 false ->
                     ScoreCardLine = 0
             end,
-            Pid ! {play_action, self(), {make_ref(), Tid, Gid, RollNum, Keepers, ScoreCardLine}},
+            Pid ! {play_action, self(), {Ref, Tid, Gid, RollNum, Keepers, ScoreCardLine}},
             logged_in(Name, Pwd, TM, Ticket, Ticket);
 
         _ -> 

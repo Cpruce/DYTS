@@ -41,16 +41,17 @@ main(Params)->
 % Same with PendingTournaments; it represents tournaments we've been asked to run but which have
 %  not yet started.
 % Players is a list of tuples:
-%   {Username, Password, MaybeToken, Status, Record} - username, login token or null if logged out,
-%                                       status is logged_in or logged_out
+%   {Username, Password, MaybeToken, Pid, Record} - username, login token or null if logged out,
+%                                       Pid is a pid or logged_out
 % TODO: add completed tournaments field
 manager_run(Tournaments, Players, PendingTournaments)->
     receive
         % Data is a tuple {num-players, games-per-match}
         {request_tournament, Pid, {NumPlayers, Gpm}}->
             Tid = make_ref(),
+            Parent = self(),
             NewTourn = spawn(fun() ->
-                        tournament_manager:tournament_start(self(), Tid, NumPlayers, Gpm)
+                        tournament_manager:tournament_start(Parent, Tid, NumPlayers, Gpm)
                 end),
             manager_run(Tournaments, Players, [{Tid, Pid, NewTourn}|PendingTournaments]);
         {login, Pid, Username, {Username, Password}} ->
@@ -58,7 +59,7 @@ manager_run(Tournaments, Players, PendingTournaments)->
                 ok ->
                     shared:log("Player ~p joined, giving them login token ~p");
                 bad ->
-                    shared:log("Player ~p tried to log  in with the wrong password!"),
+                    shared:log("Player ~p tried to log in with the wrong password!"),
                     manager_run(Tournaments, Players, PendingTournaments);
                 error ->
                     shared:log("Adding player ~p.")
@@ -71,20 +72,26 @@ manager_run(Tournaments, Players, PendingTournaments)->
                     send_all_tm(Tournaments, {invalidate, Username}),
                     send_all_tm(Tournaments, {back, Username, Pid, Token});
                 false ->
-                    send_all_tm(Tournaments, {back, Username, Pid, Token})
+                    send_all_tm(Tournaments, {back, Username, Pid, Token});
+                error ->
+                    log("New player; don't have to tell anyone they're back.")
             end,
-            spawn(yahtzee_manager, monitor_player, [Username, Pid, self()]),
+            spawn(fun() -> monitor_player(Username, Pid, self()) end),
             % log_in will add the player if they don't exist, and update them if they do.
-            Players_ = log_in(Players, Username, Password, Token),
+            Players_ = log_in(Players, Username, Password, Token, Pid),
+            log("players: ~p", Players_),
             manager_run(Tournaments, Players_, PendingTournaments);
         {login, Pid, Username, {Username_, _}} ->
             shared:log("Pid ~p tried to log in as user ~p, but provided authentication for "
                 "user ~p", [Pid, Username, Username_]),
             manager_run(Tournaments, Players, PendingTournaments);
     	{request_players, Pid, NumPlayers}->
-            TournPlayers = get_n_players(Players, NumPlayers, []),
             log("Pid ~p asked for ~p players.~n", [Pid, NumPlayers]),
-            Pid ! {add_players, TournPlayers},
+            EligPlayers = [Player || Player <- Players, element(4, Player) /= logged_out],
+            TournPlayers = get_n_players(EligPlayers, NumPlayers, []),
+            TournPlayers_ = [{Player, PPid, Token} || {Player, _, Token, PPid, _} <- TournPlayers],
+            Pid ! {add_players, TournPlayers_},
+            log("Sent: ~p", [TournPlayers_]),
             manager_run(Tournaments, Players, PendingTournaments);
 	{tournament_begin, _Pid, Tid} ->
 		log("Tournament ~p has begun.~n"),
@@ -130,8 +137,8 @@ manager_run(Tournaments, Players, PendingTournaments)->
 get_n_players([], X, _Acc) when X > 0 -> [];
 get_n_players(_Players, 0, Acc) -> Acc;
 get_n_players(Players, N, Acc) ->
-	RandPlayer = lists:nth(crypto:rand_uniform(1, length(Players)), Players),
-	case lists:member(RandPlayer, Players) of
+	RandPlayer = lists:nth(crypto:rand_uniform(1, length(Players)+1), Players),
+	case lists:member(RandPlayer, Acc) of
 		true ->
 			get_n_players(Players, N, Acc);
 		false ->
@@ -150,16 +157,16 @@ validate_password([_|T], Username, Password) ->
     validate_password(T, Username, Password).
 
 logged_in([], _) -> error;
-logged_in([{Username, _, _, logged_in, _}|_], Username) -> ok;
-logged_in([{Username, _, _, logged_out, _}|_], Username) -> ok;
+logged_in([{Username, _, _, _, _}|_], Username) -> true;
+logged_in([{Username, _, _, logged_out, _}|_], Username) -> false;
 logged_in([_|T], Username) -> logged_in(T, Username).
 
-log_in([], Username, Password, Token) ->
-    [{Username, Password, Token, logged_in, []}];
-log_in([{Username, Password, _, _, Record}|T] , Username, Password, Token) ->
-    [{Username, Password, Token, logged_in, Record}|T];
-log_in([H|T], Username, Password, Token) ->
-    [H|log_in(T, Username, Password, Token)].
+log_in([], Username, Password, Token, Pid) ->
+    [{Username, Password, Token, Pid, []}];
+log_in([{Username, Password, _, _, Record}|T] , Username, Password, Token, Pid) ->
+    [{Username, Password, Token, Pid, Record}|T];
+log_in([H|T], Username, Password, Token, Pid) ->
+    [H|log_in(T, Username, Password, Token, Pid)].
 
 log_out([], _) -> [];
 log_out([{Username, Password, _, logged_in, Record}|T], Username) ->
@@ -176,7 +183,7 @@ send_all_tm([{_, Pid, _, _}|T], M) ->
 
 % monitor players to make sure they are still in the game
 monitor_player(Name, Pid, ParentPid) -> 
-	erlang:monitor(yahtzee_player, Pid), %{RegName, Node}
+	erlang:monitor(process, Pid), %{RegName, Node}
 	receive
 	
 		{'DOWN', _Ref, process, _Pid, normal} ->
