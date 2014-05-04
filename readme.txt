@@ -42,3 +42,6 @@ Deficiencies: Fault tolerance mid-game does not work, player is not very good.
 
 May have issues when players crash, but those haven't shown up for a while.
 
+
+However, our players are pretty swanky and manage to rejoin on a crashed
+connection to any individual TM.
