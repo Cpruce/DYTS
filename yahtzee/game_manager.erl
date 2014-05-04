@@ -24,7 +24,7 @@ serve_match(Parent, P1, bye, Tid, Mid, _NumGame)->
 	Parent ! {match_over, P1, bye, Mid, Tid};
 serve_match(Parent, P1, P2, Tid, Mid, NumGame)->
 	log("Beginning match between ~p and ~p.", [P1, P2]),
-    case play_games(P1, P2, Tid, Mid, NumGame, 0, 0, 0, 0, true) of
+    case play_games(P1, P2, Tid, Mid, NumGame, 0, 0, 0, 0, false) of
         P1 ->
             Parent ! {match_over, P1, P2, Mid, Tid};
         P2 ->
@@ -104,7 +104,7 @@ check_winner(P1ScoreCard, P2ScoreCard)->
 
 % 13 rounds for 1 game
 turn(Round, P1, P2, P1ScoreCard, P2ScoreCard, P1Patterns, P2Patterns, Tid, Gid, IsStandard)->
-	log("Turn ~p between ~p and ~p.", [Round, P1, P2]),
+	log("Round ~p between ~p and ~p.", [Round, P1, P2]),
     Dice1 = [crypto:rand_uniform(1, 7) || _X <- lists:seq(1, 15)],
     Dice2 = case IsStandard of
         true ->
@@ -113,14 +113,8 @@ turn(Round, P1, P2, P1ScoreCard, P2ScoreCard, P1Patterns, P2Patterns, Tid, Gid, 
         false ->
             Dice1
     end,
-	{P1Pattern, P1Dice} = case run_round(P1, P1ScoreCard, P2ScoreCard, Tid, Gid, Dice1) of
-        {X, Y} -> {X, Y};
-        Z -> {0, Z}
-    end,
-	{P2Pattern, P2Dice} = case run_round(P2, P2ScoreCard, P1ScoreCard, Tid, Gid, Dice2) of
-        {X2, Y2} -> {X2, Y2};
-        Z2 -> {0, Z2}
-    end,
+	{P1Pattern, P1Dice} = run_round(P1, P1ScoreCard, P2ScoreCard, Tid, Gid, Dice1),
+	{P2Pattern, P2Dice} = run_round(P2, P2ScoreCard, P1ScoreCard, Tid, Gid, Dice2),
     case {box_valid(P1ScoreCard, P1Pattern), box_valid(P2ScoreCard, P2Pattern)} of
         {true, false} ->
             {ok, p1};
@@ -130,8 +124,14 @@ turn(Round, P1, P2, P1ScoreCard, P2ScoreCard, P1Patterns, P2Patterns, Tid, Gid, 
             cheaters;
         {true, true} ->
             % TODO: extra bonuses
-            {P1Bonus, P1Box} = score_round(P1Dice, lists:nth(P1Pattern, ?PATTERNS), P1ScoreCard),
-            {P2Bonus, P2Box} = score_round(P2Dice, lists:nth(P2Pattern, ?PATTERNS), P2ScoreCard),
+            {P1Bonus, P1Box} = case score_round(P1Dice, element(P1Pattern, ?PATTERNS), P1ScoreCard) of
+                {X, Y} -> {X, Y};
+                Z -> {0, Z}
+            end,
+            {P2Bonus, P2Box} = case score_round(P2Dice, element(P2Pattern, ?PATTERNS), P2ScoreCard) of
+                {X2, Y2} -> {X2, Y2};
+                Z2 -> {0, Z2}
+            end,
             NewP1SC = replace_nth(P1Pattern, P1Box, P1ScoreCard),
             NewP2SC = replace_nth(P2Pattern, P2Box, P2ScoreCard),	
             NewP1SC_ = replace_nth(14, lists:nth(14, P1ScoreCard) + P1Bonus, NewP1SC),
@@ -173,9 +173,9 @@ run_round(Player, ScoreCard, OtherScoreCard, Tid, Gid, Dice) ->
     assembly_phase(Name, Pid, ScoreCard, OtherScoreCard, Tid, Gid, InitDice, 1, RestDice).
 
 assembly_phase(Name, Pid, ScoreCard, OppScoreCard, Tid, Gid, Dice, RollNum, Extra) ->
-	Pid ! {play_request, self(), {make_ref(), Tid, Gid, RollNum, Dice, ScoreCard, OppScoreCard}},
+    Pid ! {play_request, self(), Name, {make_ref(), Tid, Gid, RollNum, Dice, ScoreCard, OppScoreCard}},
     receive
-        {play_action, PlayerPid, {_Ref, Tid, Gid, RollNum, Keepers, ScoreCardLine}}->
+        {play_action, PlayerPid, Name, {_Ref, Tid, Gid, RollNum, Keepers, ScoreCardLine}}->
             case ScoreCardLine > 0 of
                 true ->
                     log("Player ~p decided to stay on ~p.", [Name, Dice]),
@@ -184,17 +184,17 @@ assembly_phase(Name, Pid, ScoreCard, OppScoreCard, Tid, Gid, Dice, RollNum, Extr
                     case RollNum of
                         3 ->
                             log("Player ~p tried to keep playing after roll 3. Forfeiting.", [Name]),
-                            cheat;
+                            {-1, [7,7,7,7,7]};
                         _ ->
                             DiceKept = prune_dice(Dice, Keepers),
                             case length(DiceKept) > 5 of
                                 true ->
                                     log("Player ~p tried to keep too many dice, somehow", [Name]),
-                                    cheat;
+                                    {-1, [7,7,7,7,7]};
                                 false ->
                                     SubsetExcl = Dice--DiceKept,	
-                                    NewDice = lists:sort(DiceKept++lists:sublist(Extra, lists:length(SubsetExcl))),
-                                    NewExtra = lists:sublist(Extra, lists:length(SubsetExcl + 1, 15)),
+                                    NewDice = lists:sort(DiceKept++lists:sublist(Extra, length(SubsetExcl))),
+                                    NewExtra = lists:sublist(Extra, length(SubsetExcl) + 1, 15),
                                     assembly_phase(Name, PlayerPid, ScoreCard, OppScoreCard, Tid, Gid, NewDice, RollNum+1, NewExtra)
                             end
                     end
@@ -256,7 +256,7 @@ assembly_phase(Name, Pid, ScoreCard, OppScoreCard, Tid, Gid, Dice, RollNum, Extr
 score_round(Xs, {upper, X}, _ScoreCard) ->
     N = length([Y || Y <- Xs, Y == X]),
     log("Upper section ~p. ~p ~ps gives you ~p.", 
-        [X, Xs, N, X, X * N]),
+        [X, Xs, N, X * N]),
     X * N;
 score_round([X, X, X, X, X], yahtzee, _ScoreCard ) -> 
 	% Yahtzee
