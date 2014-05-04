@@ -139,6 +139,9 @@ manager_run(Tournaments, Players, PendingTournaments)->
     end.
 
 % get # player names
+get_n_players2(Players, N) ->
+    lists:sublist(shuffle(Players), N).
+
 get_n_players([], X, _Acc) when X > 0 -> [];
 get_n_players(_Players, 0, Acc) -> Acc;
 get_n_players(Players, N, Acc) ->
