@@ -141,7 +141,7 @@ manager_run(Tournaments, Players, PendingTournaments)->
 get_n_players([], X, _Acc) when X > 0 -> [];
 get_n_players(_Players, 0, Acc) -> Acc;
 get_n_players(Players, N, Acc) ->
-	RandPlayer = lists:nth(crypto:rand_uniform(1, length(Players)), Players),
+	RandPlayer = lists:nth(crypto:rand_uniform(1, length(Players)+1), Players),
 	case lists:member(RandPlayer, Acc) of
 		true ->
 			get_n_players(Players, N, Acc);
