@@ -34,7 +34,9 @@ main(Params)->
     log("Node is ~p, name is yahtzee_player, username is ~p",
         [node(), Name]),
     log("Name ~p Pwd ~p Tms ~p", [Name, Pwd, TMs]),
-    player_begin(Name, Pwd, [list_to_atom(TM) || TM <- TMs], []).
+    player_begin(Name, Pwd, [list_to_atom(TM) || TM <- TMs], []),
+    log("Bye-bye!"),
+    halt().
 
 
 player_begin(Name, _, [], []) ->
@@ -52,6 +54,9 @@ player_begin(Name, Pwd, TMs, Pids) ->
     erlang:monitor(process, Pid),
     player_begin(Name, Pwd, tl(TMs), [{Pid, TM}|Pids]).
 
+player_wait(_Name, _Pwd, []) ->
+    log("No children left to play. Going away.");
+
 player_wait(Name, Pwd, Pids) ->
     receive
         {'DOWN', _, process, Pid, Info} ->
@@ -65,6 +70,9 @@ player_wait(Name, Pwd, Pids) ->
                 noconnection ->
                     log("Process wasn't on our node, somehow!"),
                     player_wait(Name, Pwd, Rest);
+                normal ->
+                    log("Process exited normally. Probably means TM is down, not restarting."),
+                    player_wait(Name, Pwd, Rest);
                 _ ->
                     shared:log("Restarting connection to TM ~p.", [TM]),
                     player_begin(Name, Pwd, [TM], Rest)
@@ -74,10 +82,12 @@ player_wait(Name, Pwd, Pids) ->
 log_in(Name, Pwd, TM) ->
     {yahtzee_manager, TM} !  {login, self(), Name, {Name, Pwd}},
     receive
-        {logged_in, _, Name, LoginTicket}->
+        {logged_in, Pid, Name, LoginTicket}->
+            monitor(process, Pid),
             log("Logged in to TM ~p with ticket ~p", [TM, LoginTicket]),
             logged_in(Name, Pwd, TM, LoginTicket, []);
-        {logged_in, _, Name_, LoginTicket}->
+        {logged_in, Pid, Name_, LoginTicket}->
+            monitor(process, Pid),
             log("Yahtzee manager things we're named ~p. Rolling with it ...", [Name_]),
             logged_in(Name_, Pwd, TM, LoginTicket, []);
         Other ->
@@ -89,14 +99,14 @@ log_in(Name, Pwd, TM) ->
 logged_in(Name, Pwd, TM, Ticket, Tournaments)->
     receive
         % Data is a single tournament identifier
-        {start_tournament, Pid, Tid} ->
+        {start_tournament, Pid, Name, Tid} ->
             log("Received notification that tournament ~p is starting.~n", [Tid]),
             Pid ! {accept_tournament, Name, Pwd, {Tid, Ticket}},
             logged_in(Name, Pwd, TM, Ticket, Tournaments++[Tid]);
-        {end_tournament, _, Tid} ->
+        {end_tournament, _, Name, Tid} ->
             log("Received notification that tournament ~p is ending.~n", [Tid]),
             logged_in(Name, Pwd, TM, Ticket, Tournaments--[Tid]);
-        {play_request, Pid, {Ref, Tid, Gid, RollNum, Dice, ScoreCard, OppScoreCard}}->
+        {play_request, Pid, Name, {Ref, Tid, Gid, RollNum, Dice, ScoreCard, OppScoreCard}}->
             log("Received roll of ~p on roll ~p in game ~p in tournament ~p. Player has ~p and opponent has ~p.~n", [Dice, RollNum, Gid, Tid, ScoreCard, OppScoreCard]),
             {Box, Pattern} = find_max(0, lists:map(fun(X)->scoring_process(X) end, pred_perms(Dice, fun shared:pred/1))),
             Keepers = choose_keepers(lists:sort(Dice)),
@@ -109,9 +119,18 @@ logged_in(Name, Pwd, TM, Ticket, Tournaments)->
             end,
             Pid ! {play_action, self(), {Ref, Tid, Gid, RollNum, Keepers, ScoreCardLine}},
             logged_in(Name, Pwd, TM, Ticket, Ticket);
-
-        _ -> 
-            log("Received  unknown message")
+        {Type, Pid, Name, Data} ->
+            log("Received unknown message of type ~p from ~p containing ~p", [Type, Pid, Data]),
+            logged_in(Name, Pwd, TM, Ticket, Tournaments);
+        {Type, Pid, Name_, Data} ->
+            log("Received message (~p) from ~p intended for ~p. Contains: ~p", [Type, Pid, Name_, Data]),
+            logged_in(Name, Pwd, TM, Ticket, Tournaments);
+        % We don't HAVE to assume TMs can go down, but it does happen...
+		{'DOWN', _Ref, process, _Pid, _Reason} ->
+            log("Tournament manager went down! Reason given = ~p. Giving up on life.", [_Reason]);
+        Other -> 
+            log("Received unknown message: ~p", [Other]),
+            logged_in(Name, Pwd, TM, Ticket, Tournaments)
     end.
 
 % find max score from each permutation of the dice

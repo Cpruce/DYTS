@@ -93,33 +93,33 @@ manager_run(Tournaments, Players, PendingTournaments)->
             Pid ! {add_players, TournPlayers_},
             log("Sent: ~p", [TournPlayers_]),
             manager_run(Tournaments, Players, PendingTournaments);
-	{tournament_begin, _Pid, Tid} ->
-		log("Tournament ~p has begun.~n"),
-		manager_run([{Tid, in_progress, undefined, []}]++Tournaments, Players, PendingTournaments--lists:keyfind(Tid, 1, PendingTournaments));
-	{tournament_complete, Tid, Winner}->
-		manager_run(lists:keyreplace(Tid, 1, Tournaments, {Tid, complete, Winner, []}), Players, PendingTournaments);
-	{tournament_info, Pid, Tid}->
+        {tournament_begin, _Pid, Tid} ->
+            log("Tournament ~p has begun.~n"),
+            manager_run([{Tid, in_progress, undefined, []}]++Tournaments, Players, PendingTournaments--lists:keyfind(Tid, 1, PendingTournaments));
+        {tournament_complete, Tid, Winner}->
+            manager_run(lists:keyreplace(Tid, 1, Tournaments, {Tid, complete, Winner, []}), Players, PendingTournaments);
+        {tournament_info, Pid, Tid}->
             case lists:keyfind(Tid, 1, Tournaments) of
-		    false ->
-			    case lists:keyfind(Tid, 1, PendingTournaments) of
-				    false ->
-					    log("Tournament requested by ~p was not found.~n", [Pid]),
-					    manager_run(Tournaments, Players, PendingTournaments);
-				    Tourn ->
-					    log("Tournament request by ~p is ~p.~n", [Pid, Tourn]),
-					    Pid ! {tournament_status, self(), Tourn},
-			   		    manager_run(Tournaments, Players, PendingTournaments)
-			   end;
-		    Tourn ->
-			log("Tournament request by ~p is ~p.~n", [Pid, Tourn]),
-		 	Pid ! {tournament_status, self(), Tourn},
-			manager_run(Tournaments, Players, PendingTournaments)
-	    end;
+                false ->
+                    case lists:keyfind(Tid, 1, PendingTournaments) of
+                        false ->
+                            log("Tournament requested by ~p was not found.~n", [Pid]),
+                            manager_run(Tournaments, Players, PendingTournaments);
+                        Tourn ->
+                            log("Tournament request by ~p is ~p.~n", [Pid, Tourn]),
+                            Pid ! {tournament_status, self(), Tourn},
+                            manager_run(Tournaments, Players, PendingTournaments)
+                    end;
+                Tourn ->
+                    log("Tournament request by ~p is ~p.~n", [Pid, Tourn]),
+                    Pid ! {tournament_status, self(), Tourn},
+                    manager_run(Tournaments, Players, PendingTournaments)
+            end;
         {_, missing, Username} ->
             shared:log("Player ~p has vanished.", [Username]),
             send_all_tm(Tournaments, {invalidate, Username}),
             Players_ = log_out(Players, Username),
-			manager_run(Tournaments, Players_, PendingTournaments);
+            manager_run(Tournaments, Players_, PendingTournaments);
         {Other, Pid, Username, Data} ->
             shared:log("Player ~p @ ~p sent us garbage (type = ~p): ~p",
                 [Username, Pid, Other, Data]),
