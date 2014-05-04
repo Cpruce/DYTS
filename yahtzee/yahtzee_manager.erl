@@ -53,6 +53,7 @@ manager_run(Tournaments, Players, PendingTournaments)->
             NewTourn = spawn(fun() ->
                         tournament_manager:tournament_start(Parent, Tid, NumPlayers, Gpm)
                 end),
+            
             manager_run(Tournaments, Players, [{Tid, Pid, NewTourn}|PendingTournaments]);
         {login, Pid, Username, {Username, Password}} ->
             case validate_password(Players, Username, Password) of
@@ -102,7 +103,26 @@ manager_run(Tournaments, Players, PendingTournaments)->
             Requester ! {tournament_started, self(), {Tid, TPlayers, ok}},
             manager_run([{Tid, in_progress, undefined, []}]++Tournaments, Players, Pending_);
         {tournament_complete, Tid, Winner}->
-            manager_run(lists:keyreplace(Tid, 1, Tournaments, {Tid, complete, Winner, []}), Players, PendingTournaments);
+            {WinnerR, PwdW, TokenW, PidW, {MwsW, MlsW, TpW, TwW}} =
+            lists:keyfind(Winner, 1, Players),
+            NPlayers = lists:keyreplace(Winner, 1, Players, {WinnerR,
+                    PwdW, TokenW, PidW, {MwsW, MlsW, TpW, TwW+1}}),
+            manager_run(lists:keyreplace(Tid, 1, Tournaments, {Tid, complete,
+                        Winner, []}), NPlayers, PendingTournaments);
+        {user_info, Pid, Uname} ->
+            log("Received user_info request of ~p from ~p", [Uname, Pid]),
+            Pid ! {user_status, self(), lists:keyfind(Uname, 1, Tournaments)},
+            manager_run(Tournaments, Players, PendingTournaments); 
+        {match_results, Pid, Winner, Loser} ->
+            {WinnerR, PwdW, TokenW, PidW, {MwsW, MlsW, TpW, TwW}} =
+            lists:keyfind(Winner, 1, Players),
+            NPlayers = lists:keyreplace(Winner, 1, Players, {WinnerR,
+                    PwdW, TokenW, PidW, {MwsW+1, MlsW, TpW, TwW}}),
+            {LoserR, PwdL, TokenL, PidL, {MwsL, MlsL, TpL, TwL}} =
+            lists:keyfind(Loser, 1, NPlayers),
+            NNPlayers = lists:keyreplace(Loser, 1, NPlayers, {LoserR, PwdL,
+                    TokenL, PidL, {MwsL, MlsL+1, TpL, TwL}}),    
+            manager_run(Tournaments, NNPlayers, PendingTournaments);
         {tournament_info, Pid, Tid}->
             case lists:keyfind(Tid, 1, Tournaments) of
                 false ->
