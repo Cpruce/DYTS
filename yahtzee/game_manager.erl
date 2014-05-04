@@ -24,7 +24,10 @@ serve_match(Parent, P1, bye, Tid, Mid, _NumGame)->
 	Parent ! {match_over, P1, bye, Mid, Tid};
 serve_match(Parent, P1, P2, Tid, Mid, NumGame)->
 	log("Beginning match between ~p and ~p.", [P1, P2]),
-    case play_games(P1, P2, Tid, Mid, NumGame, 0, 0, 0, 0, false) of
+    log("Parent = ~p, me = ~p", [Parent, self()]),
+    G = play_games(P1, P2, Tid, Mid, NumGame, 0, 0, 0, 0, false),
+    log("Match over, result = ~p", [G]),
+    case G of
         P1 ->
             Parent ! {match_over, P1, P2, Mid, Tid};
         P2 ->
@@ -43,7 +46,7 @@ play_games(P1, P2, Tid, Mid, NumGame, P1Wins, P2Wins, Ties, Faults, Standard) ->
                     case Ties*2 >= NumGame of
                         true ->
                             log("Tie match. Replaying with standard rules."),
-                            play_games(P1, P2, Tid, Mid, NumGame, 0, 0, 0, 0, true);
+                            tie;
                         false ->
                             case Faults*2 >= NumGame of
                                 true ->
@@ -69,7 +72,9 @@ play_games(P1, P2, Tid, Mid, NumGame, P1Wins, P2Wins, Ties, Faults, Standard) ->
                     play_games(P1, P2, Tid, Mid, NumGame, P1Wins, P2Wins, Ties + 1, Faults, Standard);
                 cheaters ->
                     play_games(P1, P2, Tid, Mid, NumGame, P1Wins, P2Wins, Ties, Faults + 1, Standard)
-            end
+            end;
+        tie ->
+            play_games(P1, P2, Tid, Mid, NumGame, 0, 0, 0, 0, true)
     end.
 
 serve_game(P1, P2, Tid, Gid, IsStandard) ->

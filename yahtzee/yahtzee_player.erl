@@ -117,7 +117,13 @@ logged_in(Name, Pwd, TM, Ticket, Tournaments)->
                         -1 ->
                             ScoreCardLine = Line;
                         _ ->
-                            ScoreCardLine = 0
+                            case RollNum of
+                                3 ->
+                                    ScoreCardLine = lists:nth(1,
+                                        [X || X <- lists:seq(1, 13), lists:nth(X, ScoreCard) == -1]);
+                                _ ->
+                                    ScoreCardLine = 0
+                            end
                     end;
                 false ->
                     case RollNum of

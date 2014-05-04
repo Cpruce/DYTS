@@ -34,9 +34,14 @@ tournament_run(Parent, Tid, Mid, NumPlayers, Gpm, [], Winners)->
 	case length(Winners) == 1 of
 		true ->
 			log("Tournament over, the winner is ~p!", [hd(Winners)]),
-			hd(Winners) ! {end_tournament, Tid},
+			case hd(Winners) of
+                {_, Pid_, _} ->
+                    Pid_ ! {end_tournament, Tid};
+                bye ->
+                    ok
+            end,
 			Parent ! {tournament_complete, Tid, hd(Winners)},
-			halt();
+            exit(self());
 		false ->
 			log("")
 	end,
@@ -51,13 +56,15 @@ tournament_run(Parent, Tid, Mid, NumPlayers, Gpm, [], Winners)->
 	receive
 		{match_over, Winner, Loser, RMid, Tid}->
 			log("~p won against ~p in match ~p in tournament ~p.", [Winner, Loser, RMid, Tid]),
-			Loser ! {end_tournament, Tid},
-            Parent ! {match_results, self(), Winner, Loser},
-            tournament_run(Parent, Tid, Mid, NumPlayers-1, Gpm, [], Winners++[Winner]);
+            {_, LP, _} = Loser,
+			LP ! {end_tournament, Tid},
+			tournament_run(Parent, Tid, Mid, NumPlayers-1, Gpm, [], Winners++[Winner]);
         {match_fault, Loser1, Loser2, RMid, Tid}->
 			log("Both ~p and ~p crashed or cheated too much in match ~p (tournament ~p)", [Loser1, Loser1, RMid, Tid]),
-			Loser1 ! {end_tournament, Tid},
-			Loser2 ! {end_tournament, Tid},
+            {_, LP1, _} = Loser1,
+            {_, LP2, _} = Loser2,
+			LP1 ! {end_tournament, Tid},
+			LP2 ! {end_tournament, Tid},
 			tournament_run(Parent, Tid, Mid, NumPlayers-1, Gpm, [], Winners++[bye]);
         {invalidate, Username} ->
             Winners_ = invalidate_user(Winners, Username),
@@ -69,16 +76,17 @@ tournament_run(Parent, Tid, Mid, NumPlayers, Gpm, [], Winners)->
 			log("Received something unparseable. ~p", [Other])
 	end;
 tournament_run(Parent, Tid, Mid, NumPlayers, Gpm, Bracket, Winners)->
-    spawn(fun() -> bracket_run(Parent, Tid, Mid, Bracket, Gpm) end),
+    Pid = self(),
+    spawn(fun() -> bracket_run(Parent, Pid, Tid, Mid, Bracket, Gpm) end),
 	tournament_run(Parent, Tid, Mid+length(Bracket), NumPlayers, Gpm, [], Winners).	
 
-bracket_run(_Parent, _Tid, _Mid, [], _Gpm)-> [];
-bracket_run(Parent, Tid, Mid, [{P1, bye}|Bracket], Gpm)->
-	spawn(game_manager, serve_match, [self(), P1, bye, Tid, Mid, Gpm]),
-	bracket_run(Parent, Tid, Mid+1, Bracket, Gpm); 
-bracket_run(Parent, Tid, Mid, [{P1, P2}|Bracket], Gpm)->
-	spawn(game_manager, serve_match, [self(), P1, P2, Tid, Mid, Gpm]),
-	bracket_run(Parent, Tid, Mid+1, Bracket, Gpm). 
+bracket_run(_Parent, _Pid,  _Tid, _Mid, [], _Gpm)-> [];
+bracket_run(Parent, Pid, Tid, Mid, [{P1, bye}|Bracket], Gpm)->
+	spawn(game_manager, serve_match, [Pid, P1, bye, Tid, Mid, Gpm]),
+	bracket_run(Parent, Pid, Tid, Mid+1, Bracket, Gpm); 
+bracket_run(Parent, Pid, Tid, Mid, [{P1, P2}|Bracket], Gpm)->
+	spawn(game_manager, serve_match, [Pid, P1, P2, Tid, Mid, Gpm]),
+	bracket_run(Parent, Pid, Tid, Mid+1, Bracket, Gpm). 
 
 tournament_wait(Parent, Tid, NumPlayers, Gpm, Players, Pending) ->
     case length(Players) == NumPlayers of
