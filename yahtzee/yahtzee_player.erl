@@ -108,14 +108,30 @@ logged_in(Name, Pwd, TM, Ticket, Tournaments)->
             logged_in(Name, Pwd, TM, Ticket, Tournaments--[Tid]);
         {play_request, Pid, Name, {Ref, Tid, Gid, RollNum, Dice, ScoreCard, OppScoreCard}}->
             log("Received roll of ~p on roll ~p in game ~p in tournament ~p. Player has ~p and opponent has ~p.~n", [Dice, RollNum, Gid, Tid, ScoreCard, OppScoreCard]),
-            {Box, Pattern} = find_max(0, lists:map(fun(X)->scoring_process(X) end, pred_perms(Dice, fun shared:pred/1))),
+            %% {Box, Pattern} = find_max(0, lists:map(fun(X)->scoring_process(X) end, pred_perms(Dice, fun shared:pred/1))),
+            {Box, Line, Pattern} = scoring_process(lists:sort(Dice)),
             Keepers = choose_keepers(lists:sort(Dice)),
-            case Box >= 30 of 
+            case (Box >= 30) of 
                 true ->
-                    % no need to continue
-                    ScoreCardLine = Box;
+                    case lists:nth(Line, ScoreCard) of
+                        -1 ->
+                            ScoreCardLine = Line;
+                        _ ->
+                            ScoreCardLine = 0
+                    end;
                 false ->
-                    ScoreCardLine = 0
+                    case RollNum of
+                        3 ->
+                            case lists:nth(Line, ScoreCard) of
+                                -1 ->
+                                    ScoreCardLine = Line;
+                                _ ->
+                                    ScoreCardLine = lists:nth(1,
+                                        [X || X <- lists:seq(1, 13), lists:nth(X, ScoreCard) == -1])
+                            end;
+                        _ ->
+                            ScoreCardLine = 0
+                    end
             end,
             Pid ! {play_action, self(), Name, {Ref, Tid, Gid, RollNum, Keepers, ScoreCardLine}},
             logged_in(Name, Pwd, TM, Ticket, Ticket);
@@ -148,68 +164,65 @@ find_max(Max, [Box|Perms])->
 scoring_process([X, X, X, X, X]) -> 
     % Yahtzee
     log("Yahtzee! Mark it 50.~n"),
-    {50, [X, X, X, X, X]};
-scoring_process([A, B, C, D, E]) when (E == D + 1) and (D == C + 1) and
-        (C == B + 1) and (B == A + 1) ->
-            % Large Straight
-            log("Large straight! That's 40.~n"),
-            {40, [A, B, C, D, E]};
-        scoring_process([A, B, C, D, E]) when (E == D + 1) and (D == C + 1) and
-        (C == B + 1) ->
-            log("Small straight! 30 isn't too small relatively.~n"),
-            {30, [A, B, C, D, E]};
-        scoring_process([A, B, C, D, E]) when (D == C + 1) and (C == B + 1) and 
-        (B == A + 1) ->
-            log("Small straight! 30 isn't too small relatively.~n"),
-            {30, [A, B, C, D, E]};
-        scoring_process([A, A, A, B, B]) -> 
-            % Full House 
-            log("Full house. 25 shall be given.~n"),
-            {25, [A, A, A, B, B]};
-        scoring_process([B, B, A, A, A]) ->
-            % Full House
-            log("Full house. 25 shall be given.~n"),
-            {25, [B, B, A, A, A]};
-        scoring_process([X, X, X, X, Y]) ->
-            Sum = 4 * X + Y,
-            log("Four of a kind. Sum is ~p.~n", [Sum]),	
-            {Sum, [X, X, X, X, Y]};
-        scoring_process([Y, X, X, X, X]) ->
-            Sum = 4 * X + Y,
-            log("Four of a kind. Sum is ~p.~n", [Sum]),	
-            {Sum, [Y, X, X, X, X]};
-        scoring_process([X, X, X, Y, Z]) ->
-            Sum = 3 * X + Y + Z,
-            log("Three of a kind. Sum is ~p.~n", [Sum]),	
-            {Sum, [X, X, X, Y, Z]};
-        scoring_process([Y, X, X, X, Z]) ->
-            Sum = 3 * X + Y + Z,
-            log("Three of a kind. Sum is ~p.~n", [Sum]),	
-            {Sum, [Y, X, X, X, Z]};
-        scoring_process([Y, Z, X, X, X]) ->
-            Sum = 3 * X + Y + Z,
-            log("Three of a kind. Sum is ~p.~n", [Sum]),	
-            {Sum, [Y, Z, X, X, X]};
-        scoring_process([Y, Z, W, X, X]) ->
-            Sum = 2 * X + W + Y + Z,
-            log("Two of a kind. Sum is ~p.~n", [Sum]),	
-            {Sum, [Y, Z, W, X, X]};
-        scoring_process([Y, Z, X, X, W]) ->
-            Sum = 2 * X + W + Y + Z,
-            log("Two of a kind. Sum is ~p.~n", [Sum]),	
-            {Sum, [Y, Z, X, X, W]};
-        scoring_process([Y, X, X, W, Z]) ->
-            Sum = 2 * X + W + Y + Z,
-            log("Two of a kind. Sum is ~p.~n", [Sum]),	
-            {Sum, [Y, X, X, W, Z]};
-        scoring_process([X, X, W, Y, Z]) ->
-            Sum = 2 * X + W + Y + Z,
-            log("Two of a kind. Sum is ~p.~n", [Sum]),	
-            {Sum, [X, X, W, Y, Z]};
-        scoring_process([R1, R2, R3, R4, R5])->
-            Sum = R1 + R2 + R3 + R4 + R5,
-            log("No pattern. Sum is ~p.~n", [Sum]),
-            {Sum, [R1, R2, R3, R4, R5]}.
+    {50, 12, [X, X, X, X, X]};
+scoring_process([A, B, C, D, E]) when (E == D + 1) and (D == C + 1) and (C == B + 1) and (B == A + 1) ->
+    % Large Straight
+    log("Large straight! That's 40.~n"),
+    {40, 11, [A, B, C, D, E]};
+scoring_process([A, B, C, D, E]) when (E == D + 1) and (D == C + 1) and (C == B + 1) ->
+    log("Small straight! 30 isn't too small relatively.~n"),
+    {30, 10, [A, B, C, D, E]};
+scoring_process([A, B, C, D, E]) when (D == C + 1) and (C == B + 1) and (B == A + 1) ->
+    log("Small straight! 30 isn't too small relatively.~n"),
+    {30, 10, [A, B, C, D, E]};
+scoring_process([A, A, A, B, B]) -> 
+    % Full House 
+    log("Full house. 25 shall be given.~n"),
+    {25, 9, [A, A, A, B, B]};
+scoring_process([B, B, A, A, A]) ->
+    % Full House
+    log("Full house. 25 shall be given.~n"),
+    {25, 9, [B, B, A, A, A]};
+scoring_process([X, X, X, X, Y]) ->
+    Sum = 4 * X + Y,
+    log("Four of a kind. Sum is ~p.~n", [Sum]),	
+    {Sum, 8, [X, X, X, X, Y]};
+scoring_process([Y, X, X, X, X]) ->
+    Sum = 4 * X + Y,
+    log("Four of a kind. Sum is ~p.~n", [Sum]),	
+    {Sum, 8, [Y, X, X, X, X]};
+scoring_process([X, X, X, Y, Z]) ->
+    Sum = 3 * X + Y + Z,
+    log("Three of a kind. Sum is ~p.~n", [Sum]),	
+    {Sum, 7, [X, X, X, Y, Z]};
+scoring_process([Y, X, X, X, Z]) ->
+    Sum = 3 * X + Y + Z,
+    log("Three of a kind. Sum is ~p.~n", [Sum]),	
+    {Sum, 7, [Y, X, X, X, Z]};
+scoring_process([Y, Z, X, X, X]) ->
+    Sum = 3 * X + Y + Z,
+    log("Three of a kind. Sum is ~p.~n", [Sum]),	
+    {Sum, 7, [Y, Z, X, X, X]};
+%% scoring_process([Y, Z, W, X, X]) ->
+%%     Sum = 2 * X + W + Y + Z,
+%%     log("Two of a kind. Sum is ~p.~n", [Sum]),	
+%%     {Sum, 7, [Y, Z, W, X, X]};
+%% scoring_process([Y, Z, X, X, W]) ->
+%%     Sum = 2 * X + W + Y + Z,
+%%     log("Two of a kind. Sum is ~p.~n", [Sum]),	
+%%     {Sum, [Y, Z, X, X, W]};
+%% scoring_process([Y, X, X, W, Z]) ->
+%%     Sum = 2 * X + W + Y + Z,
+%%     log("Two of a kind. Sum is ~p.~n", [Sum]),	
+%%     {Sum, [Y, X, X, W, Z]};
+%% scoring_process([X, X, W, Y, Z]) ->
+%%     Sum = 2 * X + W + Y + Z,
+%%     log("Two of a kind. Sum is ~p.~n", [Sum]),	
+%%     {Sum, [X, X, W, Y, Z]};
+scoring_process([R1, R2, R3, R4, R5])->
+    Sum = R1 + R2 + R3 + R4 + R5,
+    log("No pattern. Sum is ~p.~n", [Sum]),
+    {Sum, 13, [R1, R2, R3, R4, R5]}.
 
         % Returns list of booleans (true or false atoms)
         % Assumes that a sorted list was supplied
