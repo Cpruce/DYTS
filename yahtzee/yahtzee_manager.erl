@@ -80,7 +80,7 @@ manager_run(Tournaments, Players, PendingTournaments)->
             spawn(fun() -> monitor_player(Username, Pid, ParentPid) end),
             % log_in will add the player if they don't exist, and update them if they do.
             Players_ = log_in(Players, Username, Password, Token, Pid),
-            log("players: ~p", Players_),
+            log("players: ~p", [ Players_ ]),
             manager_run(Tournaments, Players_, PendingTournaments);
         {login, Pid, Username, {Username_, _}} ->
             shared:log("Pid ~p tried to log in as user ~p, but provided authentication for "

@@ -47,6 +47,7 @@ tournament_run(Parent, Tid, Mid, NumPlayers, Gpm, [], Winners)->
 		false ->
 			log("Waiting for more matches to end.")
 	end,
+    log("waiting"),
 	receive
 		{match_over, Winner, Loser, RMid, Tid}->
 			log("~p won against ~p in match ~p in tournament ~p.", [Winner, Loser, RMid, Tid]),
@@ -57,14 +58,12 @@ tournament_run(Parent, Tid, Mid, NumPlayers, Gpm, [], Winners)->
 			Loser1 ! {end_tournament, Tid},
 			Loser2 ! {end_tournament, Tid},
 			tournament_run(Parent, Tid, Mid, NumPlayers-1, Gpm, [], Winners++[bye]);
-
         {invalidate, Username} ->
             Winners_ = invalidate_user(Winners, Username),
             tournament_run(Parent, Tid, Mid, NumPlayers, Gpm, [], Winners_);
         {back, Username, Pid, Token} ->
             Winners_ = revalidate_user(Winners, Username, Pid, Token),
             tournament_run(Parent, Tid, Mid, NumPlayers, Gpm, [], Winners_);
-
 		Other ->
 			log("Received something unparseable. ~p", [Other])
 	end;
@@ -124,16 +123,16 @@ tournament_wait(Parent, Tid, NumPlayers, Gpm, Players, Pending) ->
                     tournament_wait(Parent, Tid, NumPlayers, Gpm, Players_, Pending_);
                 bad ->
                     Pid ! {end_tournament, Parent, Username, Tid},
-		    Parent ! {request_players, self(), 1},
+                    Parent ! {request_players, self(), 1},
                     Pending_ = remove_user(Username, Pending),
                     tournament_wait(Parent, Tid, NumPlayers, Gpm, Players, Pending_);
                 error ->
                     % no such user
                     Pid ! {end_tournament, Parent, Username, Tid},
-		    Parent ! {request_players, self(), 1},
+                    Parent ! {request_players, self(), 1},
                     tournament_wait(Parent, Tid, NumPlayers, Gpm, Players, Pending)
             end
-    after 1000 ->
+    after 10000 ->
 	    Parent ! {request_players, self(), NumPlayers - length(Players)},
             tournament_wait(Parent, Tid, NumPlayers, Gpm, Players, [])
     end.
@@ -142,7 +141,10 @@ validate_ticket([], _, _) -> error;
 validate_ticket([{Username, _, Token}|_], Username, Token_)  ->
     case (Token == Token_) of
         true -> ok;
-        false -> bad
+        false -> bad,
+            log("Invalid token for player ~p", [Username]),
+            log("Wanted ~p, was ~p", [Token_, Token])
+
     end;
 validate_ticket([_|T], Username, Token)  ->
     validate_ticket(T, Username, Token).
