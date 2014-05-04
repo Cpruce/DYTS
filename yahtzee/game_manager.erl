@@ -6,6 +6,8 @@
 -module(game_manager).
 
 -import(shared, [pred/1, pred_perms/2, timestamp/0, log/1, log/2, shuffle/1]).
+-define(PATTERNS, {{upper, 1}, {upper, 2}, {upper, 3}, {upper, 4}, {upper, 5}, {upper, 6},
+        three, four, fullhouse, sstraight, lstraight, yahtzee, chance}).
 %% ====================================================================
 %%                             Public API
 %% ====================================================================
@@ -71,9 +73,9 @@ play_games(P1, P2, Tid, Mid, NumGame, P1Wins, P2Wins, Ties, Faults, Standard) ->
     end.
 
 serve_game(P1, P2, Tid, Gid, IsStandard) ->
-    turn(1, P1, P2, [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1], [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1], [], [], Tid, Gid, IsStandard).
+    turn(1, P1, P2, [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0], [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0], [], [], Tid, Gid, IsStandard).
 
-get_score([])-> 0;
+get_score([T])-> T * 100;
 get_score([Box|ScoreCard]) ->
 	Box+get_score(ScoreCard).
 
@@ -101,7 +103,7 @@ check_winner(P1ScoreCard, P2ScoreCard)->
 
 
 % 13 rounds for 1 game
-turn(Round, P1, P2, P1ScoreCard, P2ScoreCard, P1Patterns, P2Patterns, Tid, Mid, IsStandard)->
+turn(Round, P1, P2, P1ScoreCard, P2ScoreCard, P1Patterns, P2Patterns, Tid, Gid, IsStandard)->
 	log("Turn ~p between ~p and ~p.", [Round, P1, P2]),
     Dice1 = [crypto:rand_uniform(1, 7) || _X <- lists:seq(1, 15)],
     Dice2 = case IsStandard of
@@ -111,8 +113,14 @@ turn(Round, P1, P2, P1ScoreCard, P2ScoreCard, P1Patterns, P2Patterns, Tid, Mid, 
         false ->
             Dice1
     end,
-	{P1Box, P1Pattern} = assembly_phase(P1, P1ScoreCard, P2ScoreCard, [], Tid, Mid, 1, Dice1),
-	{P2Box, P2Pattern} = assembly_phase(P2, P2ScoreCard, P1ScoreCard, [], Tid, Mid, 1, Dice2),
+	{P1Pattern, P1Dice} = case run_round(P1, P1ScoreCard, P2ScoreCard, Tid, Gid, Dice1) of
+        {X, Y} -> {X, Y};
+        Z -> {0, Z}
+    end,
+	{P2Pattern, P2Dice} = case run_round(P2, P2ScoreCard, P1ScoreCard, Tid, Gid, Dice2) of
+        {X2, Y2} -> {X2, Y2};
+        Z2 -> {0, Z2}
+    end,
     case {box_valid(P1ScoreCard, P1Pattern), box_valid(P2ScoreCard, P2Pattern)} of
         {true, false} ->
             {ok, p1};
@@ -121,23 +129,29 @@ turn(Round, P1, P2, P1ScoreCard, P2ScoreCard, P1Patterns, P2Patterns, Tid, Mid, 
         {false, false} ->
             cheaters;
         {true, true} ->
+            % TODO: extra bonuses
+            {P1Bonus, P1Box} = score_round(P1Dice, lists:nth(P1Pattern, ?PATTERNS), P1ScoreCard),
+            {P2Bonus, P2Box} = score_round(P2Dice, lists:nth(P2Pattern, ?PATTERNS), P2ScoreCard),
             NewP1SC = replace_nth(P1Pattern, P1Box, P1ScoreCard),
             NewP2SC = replace_nth(P2Pattern, P2Box, P2ScoreCard),	
+            NewP1SC_ = replace_nth(14, lists:nth(14, P1ScoreCard) + P1Bonus, NewP1SC),
+            NewP2SC_ = replace_nth(14, lists:nth(14, P2ScoreCard) + P2Bonus, NewP2SC),
             case Round of
                 13 ->
-                    check_winner(NewP1SC, NewP2SC);
+                    check_winner(NewP1SC_, NewP2SC_);
                 _ ->
-                    turn(Round+1, P1, P2, NewP1SC, NewP2SC, P1Patterns++[{P1Box, P1Pattern}], P2Patterns++[{P2Box, P2Pattern}], Tid, Mid, IsStandard)
+                    turn(Round+1, P1, P2, NewP1SC_, NewP2SC_, P1Patterns++[{P1Box, P1Pattern}], P2Patterns++[{P2Box, P2Pattern}], Tid, Gid, IsStandard)
             end
     end.
 
 box_valid(Boxes, Box) ->
-    case (Box >= 1) and (Box =< length(Boxes)) of
+    % Strict inequality bc last box is yahtzees
+    case (Box >= 1) and (Box < length(Boxes)) of
         true -> (lists:nth(Box, Boxes) == -1);
         false -> false
     end.
 
-replace_nth(0, Elem, [_H|T]) ->
+replace_nth(1, Elem, [_H|T]) ->
     [Elem|T];
 replace_nth(K, Elem, [H|T]) ->
     [H|replace_nth(K-1, Elem, T)].
@@ -151,9 +165,44 @@ prune_dice(Dice, [true | Keepers]) ->
 prune_dice(Dice, [false | Keepers]) ->
 	prune_dice(tl(Dice), Keepers).
 
-assembly_phase(Player, ScoreCard, OppScoreCard, Tid, Mid, Dice, RollNum, Rolls) ->
-    {0, 0}.
-% extra yahtzee bonus of 100 points if 50 points have already been scored for that yahtzee pattern
+
+run_round(Player, ScoreCard, OtherScoreCard, Tid, Gid, Dice) ->
+    InitDice = lists:sublist(Dice, 5),
+    RestDice = lists:sublist(Dice, 6, 10),
+    {Name, Pid, _} = Player,
+    assembly_phase(Name, Pid, ScoreCard, OtherScoreCard, Tid, Gid, InitDice, 1, RestDice).
+
+assembly_phase(Name, Pid, ScoreCard, OppScoreCard, Tid, Gid, Dice, RollNum, Extra) ->
+	Pid ! {play_request, self(), {make_ref(), Tid, Gid, RollNum, Dice, ScoreCard, OppScoreCard}},
+    receive
+        {play_action, PlayerPid, {_Ref, Tid, Gid, RollNum, Keepers, ScoreCardLine}}->
+            case ScoreCardLine > 0 of
+                true ->
+                    log("Player ~p decided to stay on ~p.", [Name, Dice]),
+                    {ScoreCardLine, Dice};
+                false ->
+                    case RollNum of
+                        3 ->
+                            log("Player ~p tried to keep playing after roll 3. Forfeiting.", [Name]),
+                            cheat;
+                        _ ->
+                            DiceKept = prune_dice(Dice, Keepers),
+                            case length(DiceKept) > 5 of
+                                true ->
+                                    log("Player ~p tried to keep too many dice, somehow", [Name]),
+                                    cheat;
+                                false ->
+                                    SubsetExcl = Dice--DiceKept,	
+                                    NewDice = lists:sort(DiceKept++lists:sublist(Extra, lists:length(SubsetExcl))),
+                                    NewExtra = lists:sublist(Extra, lists:length(SubsetExcl + 1, 15)),
+                                    assembly_phase(Name, PlayerPid, ScoreCard, OppScoreCard, Tid, Gid, NewDice, RollNum+1, NewExtra)
+                            end
+                    end
+            end
+    after 4000 ->
+            log("Player ~p timed out", [Name]),
+            cheat
+    end.
 
 % emulate random roll of five dice and then two modification attempts
 %% assembly_phase(Player, ScoreCard, OppScoreCard, Patterns, Dice, Tid, Mid, RollNum, 6) ->
@@ -204,92 +253,97 @@ assembly_phase(Player, ScoreCard, OppScoreCard, Tid, Mid, Dice, RollNum, Rolls) 
 
 % Score a roll, given the requested line
 % any upper section.
-scoring_phase(Xs, {upper, X}, _ScoreCard) ->
+score_round(Xs, {upper, X}, _ScoreCard) ->
     N = length([Y || Y <- Xs, Y == X]),
     log("Upper section ~p. ~p ~ps gives you ~p.", 
         [X, Xs, N, X, X * N]),
     X * N;
-scoring_phase([X, X, X, X, X], yahtzee, _ScoreCard ) -> 
+score_round([X, X, X, X, X], yahtzee, _ScoreCard ) -> 
 	% Yahtzee
 	log("Yahtzee! Mark it 50."),
-    50;
+    case lists:nth(12, _ScoreCard) > 0 of
+        true -> log("Extra yahtzee bonus! 100 more points."),
+            {1, 50};
+        false ->
+            50
+    end;
 	%% {50, [X, X, X, X, X]};
-scoring_phase([A, B, C, D, E], lstraight, _ScoreCard) when (E == D + 1) and (D == C + 1) and
+score_round([A, B, C, D, E], lstraight, _ScoreCard) when (E == D + 1) and (D == C + 1) and
 		(C == B + 1) and (B == A + 1) ->
 	% Large Straight
 	log("Large straight! That's 40."),
     40;
 	%% {40, [A, B, C, D, E]};
-scoring_phase([A, B, C, D, E], sstraight, _ScoreCard) when (E == D + 1) and (D == C + 1) and
+score_round([_A, B, C, D, E], sstraight, _ScoreCard) when (E == D + 1) and (D == C + 1) and
 		(C == B + 1) ->
 	log("Small straight! 30 isn't too small relatively."),
     30;
 	%% {30, [A, B, C, D, E]};
-scoring_phase([A, B, C, D, E], sstraight, _ScoreCard) when (D == C + 1) and (C == B + 1) and 
+score_round([A, B, C, D, _E], sstraight, _ScoreCard) when (D == C + 1) and (C == B + 1) and 
 		(B == A + 1) ->
 	log("Small straight! 30 isn't too small relatively."),
     30;
 	%% {30, [A, B, C, D, E]};
-scoring_phase([A, A, A, B, B], fullhouse, _ScoreCard) when (A /= B)-> 
+score_round([A, A, A, B, B], fullhouse, _ScoreCard) when (A /= B)-> 
 	% Full House 
 	log("Full house. 25 shall be given."),
     25;
 	%% {25, [A, A, A, B, B]};
-scoring_phase([B, B, A, A, A], fullhouse, _ScoreCard) when (A /= B) ->
+score_round([B, B, A, A, A], fullhouse, _ScoreCard) when (A /= B) ->
 	% Full House
 	log("Full house. 25 shall be given."),
     25;
 	%% {25, [B, B, A, A, A]};
-scoring_phase([X, X, X, X, Y], four, _ScoreCard) ->
+score_round([X, X, X, X, Y], four, _ScoreCard) ->
 	Sum = 4 * X + Y,
 	log("Four of a kind. Sum is ~p.", [Sum]),	
     Sum;
 	%% {Sum, [X, X, X, X, Y]};
-scoring_phase([Y, X, X, X, X], four, _ScoreCard) ->
+score_round([Y, X, X, X, X], four, _ScoreCard) ->
 	Sum = 4 * X + Y,
 	log("Four of a kind. Sum is ~p.", [Sum]),	
     Sum;
 	%% ({Sum, [Y, X, X, X, X]};
-scoring_phase([X, X, X, Y, Z], three, _ScoreCard) ->
+score_round([X, X, X, Y, Z], three, _ScoreCard) ->
 	Sum = 3 * X + Y + Z,
 	log("Three of a kind. Sum is ~p.", [Sum]),	
     Sum;
 	%% ({Sum, [X, X, X, Y, Z]};
-scoring_phase([Y, X, X, X, Z], three, _ScoreCard) ->
+score_round([Y, X, X, X, Z], three, _ScoreCard) ->
 	Sum = 3 * X + Y + Z,
 	log("Three of a kind. Sum is ~p.", [Sum]),	
     Sum;
 	%% ({Sum, [Y, X, X, X, Z]};
-scoring_phase([Y, Z, X, X, X], three, _ScoreCard) ->
+score_round([Y, Z, X, X, X], three, _ScoreCard) ->
 	Sum = 3 * X + Y + Z,
 	log("Three of a kind. Sum is ~p.", [Sum]),	
     Sum;
 	%% ({Sum, [Y, Z, X, X, X]};
-scoring_phase([Y, Z, W, X, X], two, _ScoreCard) ->
+score_round([Y, Z, W, X, X], two, _ScoreCard) ->
 	Sum = 2 * X + W + Y + Z,
 	log("Two of a kind. Sum is ~p.", [Sum]),	
     Sum;
 	%% ({Sum, [Y, Z, W, X, X]};
-scoring_phase([Y, Z, X, X, W], two, _ScoreCard) ->
+score_round([Y, Z, X, X, W], two, _ScoreCard) ->
 	Sum = 2 * X + W + Y + Z,
 	log("Two of a kind. Sum is ~p.", [Sum]),	
     Sum;
 	%% ({Sum, [Y, Z, X, X, W]};
-scoring_phase([Y, X, X, W, Z], two, _ScoreCard) ->
+score_round([Y, X, X, W, Z], two, _ScoreCard) ->
 	Sum = 2 * X + W + Y + Z,
 	log("Two of a kind. Sum is ~p.", [Sum]),	
     Sum;
 	%% ({Sum, [Y, X, X, W, Z]};
-scoring_phase([X, X, W, Y, Z], two, _ScoreCard) ->
+score_round([X, X, W, Y, Z], two, _ScoreCard) ->
 	Sum = 2 * X + W + Y + Z,
 	log("Two of a kind. Sum is ~p.", [Sum]),	
     Sum;
 	%% ({Sum, [X, X, W, Y, Z]};
-scoring_phase([R1, R2, R3, R4, R5], chance, _ScoreCard)->
+score_round([R1, R2, R3, R4, R5], chance, _ScoreCard)->
 	Sum = R1 + R2 + R3 + R4 + R5,
 	log("Chance. Sum is ~p.", [Sum]),
     Sum;
-scoring_phase(_, Pattern, _) ->
+score_round(_, Pattern, _) ->
     log("Did not match ~p with pattern.", [Pattern]),
     0.
 
