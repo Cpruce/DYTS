@@ -53,12 +53,6 @@ manager_run(Tournaments, Players, PendingTournaments)->
             NewTourn = spawn(fun() ->
                         tournament_manager:tournament_start(Parent, Tid, NumPlayers, Gpm)
                 end),
-            receive
-                {tournament_players, TPid, TPlayers}->
-                    ;
-                Other ->
-                    log("Error in tournament players message")
-            end, 
             manager_run(Tournaments, Players, [{Tid, Pid, NewTourn}|PendingTournaments]);
         {login, Pid, Username, {Username, Password}} ->
             case validate_password(Players, Username, Password) of
@@ -70,7 +64,7 @@ manager_run(Tournaments, Players, PendingTournaments)->
                 error ->
                     shared:log("Adding player ~p.")
             end,
-            Token = make_ref(),
+            Token = make_token(),
             Pid ! {logged_in, self(), Username, Token},
             % We will only get here if the player info is valid
             case logged_in(Players, Username) of
@@ -103,19 +97,26 @@ manager_run(Tournaments, Players, PendingTournaments)->
             log("Sent: ~p", [TournPlayers_]),
             manager_run(Tournaments, Players, PendingTournaments);
         {tournament_begin, _Pid, Tid, TPlayers} ->
-            log("Tournament ~p has begun.~n"),
+            log("Tournament ~p has begun.", [Tid]),
             Pending_ = [{Tid_, Requester_, Pid_} || {Tid_, Requester_, Pid_} <- PendingTournaments, Tid_ /= Tid],
             [Requester] = [Requester_ || {Tid_, Requester_, _Pid_} <- PendingTournaments, Tid_ == Tid],
             Requester ! {tournament_started, self(), {Tid, TPlayers, ok}},
             NPlayers = new_tourn(Players, TPlayers),
             manager_run([{Tid, in_progress, undefined, []}]++Tournaments, NPlayers, Pending_);
         {tournament_complete, Tid, Winner}->
-            {WinnerR, PwdW, TokenW, PidW, {MwsW, MlsW, TpW, TwW}} =
-            lists:keyfind(Winner, 1, Players),
-            NPlayers = lists:keyreplace(Winner, 1, Players, {WinnerR,
-                    PwdW, TokenW, PidW, {MwsW, MlsW, TpW, TwW+1}}),
-            manager_run(lists:keyreplace(Tid, 1, Tournaments, {Tid, complete,
-                        Winner, []}), NPlayers, PendingTournaments);
+            case Winner of
+                {WN, _, _} ->
+                    {WinnerR, PwdW, TokenW, PidW, {MwsW, MlsW, TpW, TwW}} =
+                    lists:keyfind(WN, 1, Players),
+                    NPlayers = lists:keyreplace(WN, 1, Players, {WinnerR,
+                            PwdW, TokenW, PidW, {MwsW, MlsW, TpW, TwW+1}}),
+                    manager_run(lists:keyreplace(Tid, 1, Tournaments, {Tid, complete,
+                                Winner, []}), NPlayers, PendingTournaments);
+                bye ->
+                    % wow, good job team
+                    manager_run(lists:keyreplace(Tid, 1, Tournaments, {Tid, complete,
+                                bye, []}), Players, PendingTournaments)
+            end;
         {user_info, Pid, Uname} ->
             log("Received user_info request of ~p from ~p", [Uname, Pid]),
             Pid ! {user_status, self(), lists:keyfind(Uname, 1, Tournaments)},
@@ -130,20 +131,32 @@ manager_run(Tournaments, Players, PendingTournaments)->
             NNPlayers = lists:keyreplace(Loser, 1, NPlayers, {LoserR, PwdL,
                     TokenL, PidL, {MwsL, MlsL+1, TpL, TwL}}),    
             manager_run(Tournaments, NNPlayers, PendingTournaments);
+        {double_fault, _Pid, LN1, LN2} ->
+            % two cheats/whatever. both lose!
+            {WinnerR, PwdW, TokenW, PidW, {MwsW, MlsW, TpW, TwW}} =
+            lists:keyfind(LN1, 1, Players),
+            NPlayers = lists:keyreplace(LN1, 1, Players, {WinnerR,
+                    PwdW, TokenW, PidW, {MwsW, MlsW+1, TpW, TwW}}),
+            {LoserR, PwdL, TokenL, PidL, {MwsL, MlsL, TpL, TwL}} =
+            lists:keyfind(LN2, 1, NPlayers),
+            NNPlayers = lists:keyreplace(LN2, 1, NPlayers, {LoserR, PwdL,
+                    TokenL, PidL, {MwsL, MlsL+1, TpL, TwL}}),    
+            manager_run(Tournaments, NNPlayers, PendingTournaments);
+
         {tournament_info, Pid, Tid}->
             case lists:keyfind(Tid, 1, Tournaments) of
                 false ->
                     case lists:keyfind(Tid, 1, PendingTournaments) of
                         false ->
-                            log("Tournament requested by ~p was not found.~n", [Pid]),
+                            log("Tournament requested by ~p was not found.", [Pid]),
                             manager_run(Tournaments, Players, PendingTournaments);
                         Tourn ->
-                            log("Tournament request by ~p is ~p.~n", [Pid, Tourn]),
+                            log("Tournament request by ~p is ~p.", [Pid, Tourn]),
                             Pid ! {tournament_status, self(), Tourn},
                             manager_run(Tournaments, Players, PendingTournaments)
                     end;
                 Tourn ->
-                    log("Tournament request by ~p is ~p.~n", [Pid, Tourn]),
+                    log("Tournament request by ~p is ~p.", [Pid, Tourn]),
                     Pid ! {tournament_status, self(), Tourn},
                     manager_run(Tournaments, Players, PendingTournaments)
             end;
@@ -167,7 +180,8 @@ manager_run(Tournaments, Players, PendingTournaments)->
 
 new_tourn(Players, [])->
     Players;
-new_tourn(Players, [{A,B,C,D,{Mws, Mls, Tp, Tws}}|TPlayers])->
+new_tourn(Players, [P|TPlayers])->
+    {A, B, C, D, {Mws, Mls, Tp, Tws}} = lists:keyfind(P, 1, Players),
     new_tourn(lists:keyreplace(A, 1, Players, {A,B,C,D,{Mws,Mls,Tp+1,Tws}}),
         TPlayers).
 
@@ -203,7 +217,7 @@ logged_in([{Username, _, _, logged_out, _}|_], Username) -> false;
 logged_in([_|T], Username) -> logged_in(T, Username).
 
 log_in([], Username, Password, Token, Pid) ->
-    [{Username, Password, Token, Pid, []}];
+    [{Username, Password, Token, Pid, {0, 0, 0, 0}}];
 log_in([{Username, Password, _, _, Record}|T] , Username, Password, Token, Pid) ->
     [{Username, Password, Token, Pid, Record}|T];
 log_in([H|T], Username, Password, Token, Pid) ->
@@ -219,7 +233,12 @@ log_out([H|T], Username) ->
 % Tournaments is a list of tuples: {Tid, TournamentPid, CallerPid, PlayerList}
 send_all_tm([], _) -> ok;
 send_all_tm([{_, Pid, _, _}|T], M) ->
-    Pid ! M,
+    case Pid of
+        complete ->
+            ok;
+        _ ->
+            Pid ! M
+    end,
     send_all_tm(T, M).
 
 % monitor players to make sure they are still in the game
@@ -240,3 +259,6 @@ monitor_player(Name, Pid, ParentPid) ->
 	
 	end.
  
+make_token() ->
+    % Unique and cryptographically sound.
+    {binary:decode_unsigned(crypto:rand_bytes(8)), make_ref()}.

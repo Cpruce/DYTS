@@ -56,15 +56,18 @@ tournament_run(Parent, Tid, Mid, NumPlayers, Gpm, [], Winners)->
 	receive
 		{match_over, Winner, Loser, RMid, Tid}->
 			log("~p won against ~p in match ~p in tournament ~p.", [Winner, Loser, RMid, Tid]),
-            {_, LP, _} = Loser,
+            {LN, LP, _} = Loser,
+            {WN, _, _} = Winner,
 			LP ! {end_tournament, Tid},
+            Parent ! {match_results, self(), WN, LN},
 			tournament_run(Parent, Tid, Mid, NumPlayers-1, Gpm, [], Winners++[Winner]);
         {match_fault, Loser1, Loser2, RMid, Tid}->
 			log("Both ~p and ~p crashed or cheated too much in match ~p (tournament ~p)", [Loser1, Loser1, RMid, Tid]),
-            {_, LP1, _} = Loser1,
-            {_, LP2, _} = Loser2,
+            {LN1, LP1, _} = Loser1,
+            {LN2, LP2, _} = Loser2,
 			LP1 ! {end_tournament, Tid},
 			LP2 ! {end_tournament, Tid},
+            Parent ! {double_fault, self(), LN1, LN2},
 			tournament_run(Parent, Tid, Mid, NumPlayers-1, Gpm, [], Winners++[bye]);
         {invalidate, Username} ->
             Winners_ = invalidate_user(Winners, Username),
