@@ -220,53 +220,6 @@ assembly_phase(Name, Pid, ScoreCard, OppScoreCard, Tid, Gid, Dice, RollNum, Extr
             cheat
     end.
 
-% emulate random roll of five dice and then two modification attempts
-%% assembly_phase(Player, ScoreCard, OppScoreCard, Patterns, Dice, Tid, Mid, RollNum, 6) ->
-%%         % 2nd modification attempt
-%% 	Player ! {play_request, self(), {make_ref(), Tid, Mid, RollNum, Dice, ScoreCard, OppScoreCard}},
-%% 	receive
-%% 		{play_action, PlayerPid, {Ref, Tid, Mid, RollNum, Keepers, ScoreCardLine}}->
-%% 		        DiceKept = prune_dice(Dice, Keepers),
-%% 			SubsetExcl = Dice--DiceKept,	
-%% 			NewDice = lists:sort(DiceKept++reroll(SubsetExcl)), 
-%% 			case ScoreCardLine > 0 of
-%% 				true ->
-%% 					log("Player ~p decided to stay on ~p.", [Player, Dice]),
-%%                     % FIXME: select line
-%%                     {scoring_phase(Dice, yahtzee, ScoreCard), Dice};
-%% 				false ->
-%%                     % Shouldn't we do one more?
-%%                     {scoring_phase(Dice, yahtzee, ScoreCard), Dice};
-%% 			end;
-%% 		Other -> 
-%% 			log("Unexpected message at roll ~p.", [Other])
-%% 	end;
-%% assembly_phase(Player, ScoreCard, OppScoreCard, Patterns, Dice, Tid, Mid, RollNum, 5) ->
-%%         % 1st modification attempt
-%% 	SortedDice = lists:sort(Dice),	
-%% 	Player ! {play_request, self(), {make_ref(), Tid, Mid, RollNum, SortedDice, ScoreCard, OppScoreCard}},
-%% 	receive
-%% 		{play_action, PlayerPid, {Ref, Tid, Mid, RollNum, Keepers, ScoreCardLine}}->
-%%             DiceKept = prune_dice(Dice, Keepers),
-%% 			SubsetExcl = Dice--DiceKept,	
-%% 			NewDice = lists:sort(DiceKept++reroll(SubsetExcl)),
-%% 			case ScoreCardLine > 0 of
-%% 				true ->
-%% 					log("Player ~p decided to stay on ~p.~n", [Player, Dice]),
-%%                     % FIXME: select line
-%%                     {scoring_phase(Dice, yahtzee, ScoreCard), Dice};
-%% 				false ->
-%% 					assembly_phase(Player, ScoreCard, OppScoreCard, Patterns, NewDice, Tid, Mid, RollNum, 6)
-%% 			end;
-%% 		Other -> 
-%% 			log("Unexpected message at roll ~p. ~n", [Other])
-%% 	end;
-%% assembly_phase(Player, ScoreCard, OppScoreCard, Patterns, Dice, Tid, Mid, RollNum, DieRoll)->
-%% 	% Generate random roll 1 <= N < 7
-%% 	Rnd = crypto:rand_uniform(1, 7),
-%% 	assembly_phase(Player, ScoreCard, OppScoreCard, Patterns, [Rnd]++Dice, Tid, Mid, RollNum, DieRoll+1).
-
-
 % Score a roll, given the requested line
 % any upper section.
 score_round(Xs, {upper, X}, _ScoreCard) ->
@@ -398,16 +351,3 @@ score_round([X, X, X, X, X], lstraight, ScoreCard) ->
 score_round(_, Pattern, _) ->
     log("Did not match ~p with pattern.", [Pattern]),
     0.
-
-%extra_yahtzee_bonus(_, [], ScoreCard, [])-> [];
-%extra_yahtzee_bonus({Sum, [A, B, C, D, E]}, [], ScoreCard, Acc)->
-%	extra_yahtzee_bonus(hd(Acc), tl(Acc), ScoreCard, []);
-%extra_yahtzee_bonus({Sum, [A, B, C, D, E]}, [{Sum, [A, B, C, D, E]}|Patterns], ScoreCard, Acc)->
-%	case Sum >= 50 of
-%		true ->
-%			extra_yahtzee_bonus(hd(Acc), tl(Acc)++Patterns;
-%		false ->
-%			{Sum, [A, B, C, D, E]}
-%	end;
-%extra_yahtzee_bonus({Sum, [A, B, C, D, E]}, Patterns, ScoreCard, Acc)->
-%	extra_yahtzee_bonus({Sum, [A, B, C, D, E]}, tl(Patterns), ScoreCard, Acc++[hd(Patterns)]).
