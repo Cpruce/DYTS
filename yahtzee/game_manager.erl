@@ -9,7 +9,7 @@
 %% ====================================================================
 %%                             Public API
 %% ====================================================================
--export([serve_game/6]).
+-export([serve_match/6]).
 %% ====================================================================
 %%                             Constants
 %% ====================================================================
@@ -17,43 +17,92 @@
 %%                             Functions
 %% ====================================================================
 
-serve_game(Parent, P1, bye, Tid, Mid, NumGame)->
-	log("Player ~p has a bye in match ~p in tournament ~p.~n", [P1, Mid, Tid]),
+serve_match(Parent, P1, bye, Tid, Mid, _NumGame)->
+	log("Player ~p has a bye in match ~p in tournament ~p.", [P1, Mid, Tid]),
 	Parent ! {match_over, P1, bye, Mid, Tid};
-serve_game(Parent, P1, P2, Tid, Mid, NumGame)->
-	log("Beginning game between ~p and ~p.~n", [P1, P2]),
-    turn(Parent, 1, P1, P2, [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1], [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1], [], [], Tid, Mid, true).
+serve_match(Parent, P1, P2, Tid, Mid, NumGame)->
+	log("Beginning match between ~p and ~p.", [P1, P2]),
+    case play_games(P1, P2, Tid, Mid, NumGame, 0, 0, 0, 0, true) of
+        P1 ->
+            Parent ! {match_over, P1, P2, Mid, Tid};
+        P2 ->
+            Parent ! {match_over, P2, P1, Mid, Tid};
+        fault ->
+            Parent ! {match_fault, P1, P2, Mid, Tid}
+    end.
+
+play_games(P1, P2, Tid, Mid, NumGame, P1Wins, P2Wins, Ties, Faults, Standard) ->
+    Win = case P1Wins*2 >= NumGame of
+        true -> {ok, P1};
+        false ->
+            case P2Wins*2 >= NumGame of
+                true -> {ok, P2};
+                false ->
+                    case Ties*2 >= NumGame of
+                        true ->
+                            log("Tie match. Replaying with standard rules."),
+                            play_games(P1, P2, Tid, Mid, NumGame, 0, 0, 0, 0, true);
+                        false ->
+                            case Faults*2 >= NumGame of
+                                true ->
+                                    log("Too many faults to finish match. I give up. Nobody wins."),
+                                    {ok, fault};
+                                false ->
+                                    none
+                            end
+                    end
+            end
+    end,
+    % collapse some cases
+    case Win of
+        {ok, X} -> 
+            X;
+        none ->
+            case serve_game(P1, P2, Tid, make_ref(), Standard) of
+                {ok, p1} ->
+                    play_games(P1, P2, Tid, Mid, NumGame, P1Wins + 1, P2Wins, Ties, Faults, Standard);
+                {ok, p2} ->
+                    play_games(P1, P2, Tid, Mid, NumGame, P1Wins, P2Wins + 1, Ties, Faults, Standard);
+                tie ->
+                    play_games(P1, P2, Tid, Mid, NumGame, P1Wins, P2Wins, Ties + 1, Faults, Standard);
+                cheaters ->
+                    play_games(P1, P2, Tid, Mid, NumGame, P1Wins, P2Wins, Ties, Faults + 1, Standard)
+            end
+    end.
+
+serve_game(P1, P2, Tid, Gid, IsStandard) ->
+    turn(1, P1, P2, [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1], [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1], [], [], Tid, Gid, IsStandard).
 
 get_score([])-> 0;
 get_score([Box|ScoreCard]) ->
 	Box+get_score(ScoreCard).
 
 % Game over, check winner
-check_winner(Parent, P1, P2, P1ScoreCard, P2ScoreCard, Tid, Mid)->
+check_winner(P1ScoreCard, P2ScoreCard)->
 	P1Score = get_score(P1ScoreCard),
 	P2Score = get_score(P2ScoreCard),
 	case P1Score == P2Score of
 		true ->
 			% Tie game, start game over
-			log("Tie game, starting over.~n"),
+			log("Tie game, starting over."),
             tie;
 		false ->
 			case P1Score > P2Score of
 				true ->
 					% P1 is the winner
-					log("P1 won!~n"),
-                    {ok, P1};
+					log("P1 won!"),
+                    {ok, p1};
 				false ->
 					% P2 is the winner
-					log("P2 won!~n"),
-                    {ok, P2}
+					log("P2 won!"),
+                    {ok, p2}
 			end
 	end.
 
 
 % 13 rounds for 1 game
-turn(Parent, Round, P1, P2, P1ScoreCard, P2ScoreCard, P1Patterns, P2Patterns, Tid, Mid, IsStandard)->
-	log("Turn ~p between ~p and ~p.~n", [Round, P1, P2]),
+turn(Round, P1, P2, P1ScoreCard, P2ScoreCard, P1Patterns, P2Patterns, Tid, Mid, IsStandard)->
+	log("Turn ~p between ~p and ~p.", [Round, P1, P2]),
     Dice1 = [crypto:rand_uniform(1, 7) || _X <- lists:seq(1, 15)],
     Dice2 = case IsStandard of
         true ->
@@ -64,24 +113,37 @@ turn(Parent, Round, P1, P2, P1ScoreCard, P2ScoreCard, P1Patterns, P2Patterns, Ti
     end,
 	{P1Box, P1Pattern} = assembly_phase(P1, P1ScoreCard, P2ScoreCard, [], Tid, Mid, 1, Dice1),
 	{P2Box, P2Pattern} = assembly_phase(P2, P2ScoreCard, P1ScoreCard, [], Tid, Mid, 1, Dice2),
- 	NewP1SC = replace_nth(P1Pattern, 1, P1Box, length(P1ScoreCard), P1ScoreCard),
-    NewP2SC = replace_nth(P2Pattern, 1, P2Box, length(P2ScoreCard), P2ScoreCard),	
-    case Round of
-        13 ->
-            check_winner(Parent, P1, P2, NewP1SC, NewP2SC, Tid, Mid);
-        _ ->
-            turn(Parent, Round+1, P1, P2, NewP1SC, NewP2SC, P1Patterns++[{P1Box, P1Pattern}], P2Patterns++[{P2Box, P2Pattern}], Tid, Mid, IsStandard)
+    case {box_valid(P1ScoreCard, P1Pattern), box_valid(P2ScoreCard, P2Pattern)} of
+        {true, false} ->
+            {ok, p1};
+        {false, true} ->
+            {ok, p2};
+        {false, false} ->
+            cheaters;
+        {true, true} ->
+            NewP1SC = replace_nth(P1Pattern, P1Box, P1ScoreCard),
+            NewP2SC = replace_nth(P2Pattern, P2Box, P2ScoreCard),	
+            case Round of
+                13 ->
+                    check_winner(NewP1SC, NewP2SC);
+                _ ->
+                    turn(Round+1, P1, P2, NewP1SC, NewP2SC, P1Patterns++[{P1Box, P1Pattern}], P2Patterns++[{P2Box, P2Pattern}], Tid, Mid, IsStandard)
+            end
     end.
 
-replace_nth(N, N, Elem, _ListLength, List)->
-	[Elem]++tl(List);
-replace_nth(N, M, Elem, ListLength, List)->
-	case N >= ListLength of 
-		true ->
-			error;
-		false ->
-			replace_nth(N, M+1, Elem, ListLength, tl(List))
-	end.
+box_valid(Boxes, Box) ->
+    case (Box >= 1) and (Box =< length(Boxes)) of
+        true -> (lists:nth(Box, Boxes) == -1);
+        false -> false
+    end.
+
+replace_nth(0, Elem, [_H|T]) ->
+    [Elem|T];
+replace_nth(K, Elem, [H|T]) ->
+    [H|replace_nth(K-1, Elem, T)].
+
+
+
 % separate dice kept and the dice to be rerolled
 prune_dice([], []) -> [];
 prune_dice(Dice, [true | Keepers]) ->
@@ -90,7 +152,7 @@ prune_dice(Dice, [false | Keepers]) ->
 	prune_dice(tl(Dice), Keepers).
 
 assembly_phase(Player, ScoreCard, OppScoreCard, Tid, Mid, Dice, RollNum, Rolls) ->
-    ok.
+    {0, 0}.
 % extra yahtzee bonus of 100 points if 50 points have already been scored for that yahtzee pattern
 
 % emulate random roll of five dice and then two modification attempts
@@ -149,83 +211,83 @@ scoring_phase(Xs, {upper, X}, _ScoreCard) ->
     X * N;
 scoring_phase([X, X, X, X, X], yahtzee, _ScoreCard ) -> 
 	% Yahtzee
-	log("Yahtzee! Mark it 50.~n"),
+	log("Yahtzee! Mark it 50."),
     50;
 	%% {50, [X, X, X, X, X]};
 scoring_phase([A, B, C, D, E], lstraight, _ScoreCard) when (E == D + 1) and (D == C + 1) and
 		(C == B + 1) and (B == A + 1) ->
 	% Large Straight
-	log("Large straight! That's 40.~n"),
+	log("Large straight! That's 40."),
     40;
 	%% {40, [A, B, C, D, E]};
 scoring_phase([A, B, C, D, E], sstraight, _ScoreCard) when (E == D + 1) and (D == C + 1) and
 		(C == B + 1) ->
-	log("Small straight! 30 isn't too small relatively.~n"),
+	log("Small straight! 30 isn't too small relatively."),
     30;
 	%% {30, [A, B, C, D, E]};
 scoring_phase([A, B, C, D, E], sstraight, _ScoreCard) when (D == C + 1) and (C == B + 1) and 
 		(B == A + 1) ->
-	log("Small straight! 30 isn't too small relatively.~n"),
+	log("Small straight! 30 isn't too small relatively."),
     30;
 	%% {30, [A, B, C, D, E]};
 scoring_phase([A, A, A, B, B], fullhouse, _ScoreCard) when (A /= B)-> 
 	% Full House 
-	log("Full house. 25 shall be given.~n"),
+	log("Full house. 25 shall be given."),
     25;
 	%% {25, [A, A, A, B, B]};
 scoring_phase([B, B, A, A, A], fullhouse, _ScoreCard) when (A /= B) ->
 	% Full House
-	log("Full house. 25 shall be given.~n"),
+	log("Full house. 25 shall be given."),
     25;
 	%% {25, [B, B, A, A, A]};
 scoring_phase([X, X, X, X, Y], four, _ScoreCard) ->
 	Sum = 4 * X + Y,
-	log("Four of a kind. Sum is ~p.~n", [Sum]),	
+	log("Four of a kind. Sum is ~p.", [Sum]),	
     Sum;
 	%% {Sum, [X, X, X, X, Y]};
 scoring_phase([Y, X, X, X, X], four, _ScoreCard) ->
 	Sum = 4 * X + Y,
-	log("Four of a kind. Sum is ~p.~n", [Sum]),	
+	log("Four of a kind. Sum is ~p.", [Sum]),	
     Sum;
 	%% ({Sum, [Y, X, X, X, X]};
 scoring_phase([X, X, X, Y, Z], three, _ScoreCard) ->
 	Sum = 3 * X + Y + Z,
-	log("Three of a kind. Sum is ~p.~n", [Sum]),	
+	log("Three of a kind. Sum is ~p.", [Sum]),	
     Sum;
 	%% ({Sum, [X, X, X, Y, Z]};
 scoring_phase([Y, X, X, X, Z], three, _ScoreCard) ->
 	Sum = 3 * X + Y + Z,
-	log("Three of a kind. Sum is ~p.~n", [Sum]),	
+	log("Three of a kind. Sum is ~p.", [Sum]),	
     Sum;
 	%% ({Sum, [Y, X, X, X, Z]};
 scoring_phase([Y, Z, X, X, X], three, _ScoreCard) ->
 	Sum = 3 * X + Y + Z,
-	log("Three of a kind. Sum is ~p.~n", [Sum]),	
+	log("Three of a kind. Sum is ~p.", [Sum]),	
     Sum;
 	%% ({Sum, [Y, Z, X, X, X]};
 scoring_phase([Y, Z, W, X, X], two, _ScoreCard) ->
 	Sum = 2 * X + W + Y + Z,
-	log("Two of a kind. Sum is ~p.~n", [Sum]),	
+	log("Two of a kind. Sum is ~p.", [Sum]),	
     Sum;
 	%% ({Sum, [Y, Z, W, X, X]};
 scoring_phase([Y, Z, X, X, W], two, _ScoreCard) ->
 	Sum = 2 * X + W + Y + Z,
-	log("Two of a kind. Sum is ~p.~n", [Sum]),	
+	log("Two of a kind. Sum is ~p.", [Sum]),	
     Sum;
 	%% ({Sum, [Y, Z, X, X, W]};
 scoring_phase([Y, X, X, W, Z], two, _ScoreCard) ->
 	Sum = 2 * X + W + Y + Z,
-	log("Two of a kind. Sum is ~p.~n", [Sum]),	
+	log("Two of a kind. Sum is ~p.", [Sum]),	
     Sum;
 	%% ({Sum, [Y, X, X, W, Z]};
 scoring_phase([X, X, W, Y, Z], two, _ScoreCard) ->
 	Sum = 2 * X + W + Y + Z,
-	log("Two of a kind. Sum is ~p.~n", [Sum]),	
+	log("Two of a kind. Sum is ~p.", [Sum]),	
     Sum;
 	%% ({Sum, [X, X, W, Y, Z]};
 scoring_phase([R1, R2, R3, R4, R5], chance, _ScoreCard)->
 	Sum = R1 + R2 + R3 + R4 + R5,
-	log("Chance. Sum is ~p.~n", [Sum]),
+	log("Chance. Sum is ~p.", [Sum]),
     Sum;
 scoring_phase(_, Pattern, _) ->
     log("Did not match ~p with pattern.", [Pattern]),
