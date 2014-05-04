@@ -87,10 +87,6 @@ manager_run(Tournaments, Players, PendingTournaments)->
                 "user ~p", [Pid, Username, Username_]),
             manager_run(Tournaments, Players, PendingTournaments);
     	{request_players, Pid, NumPlayers}->
-<<<<<<< HEAD
-            %NumPlayers = list_to_integer(StrNumPlayers),
-=======
->>>>>>> 9807af4e5d9dc6608bbfdc2b8470e4a9584952b7
             EligPlayers = [Player || Player <- Players, element(4, Player) /= logged_out],
             log("Pid ~p asked for ~p players with ~p eligible players.", [Pid,
                     NumPlayers, length(EligPlayers)]),
@@ -142,7 +138,7 @@ manager_run(Tournaments, Players, PendingTournaments)->
             manager_run(Tournaments, Players, PendingTournaments)
     end.
 
-% get # player names
+% get # player names, using shuffle this time 
 get_n_players2(Players, N) ->
     lists:sublist(shuffle(Players), N).
 
