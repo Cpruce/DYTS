@@ -63,16 +63,16 @@ tournament_run(Parent, Tid, Mid, NumPlayers, Gpm, [], Winners)->
 			log("Received something unparseable. ~p", [Other])
 	end;
 tournament_run(Parent, Tid, Mid, NumPlayers, Gpm, Bracket, Winners)->
-    spawn(fun() -> bracket_run(Parent, Tid, Mid, Bracket) end),
+    spawn(fun() -> bracket_run(Parent, Tid, Mid, Bracket, Gpm) end),
 	tournament_run(Parent, Tid, Mid+length(Bracket), NumPlayers, Gpm, [], Winners).	
 
-bracket_run(_Parent, _Tid, _Mid, [])-> [];
-bracket_run(Parent, Tid, Mid, [{P1, bye}|Bracket])->
-	spawn(game_manager, serve_game, [self(), P1, bye, Tid, Mid]),
-	bracket_run(Parent, Tid, Mid+1, Bracket); 
-bracket_run(Parent, Tid, Mid, [{P1, P2}|Bracket])->
-	spawn(game_manager, serve_game, [self(), P1, P2, Tid, Mid]),
-	bracket_run(Parent, Tid, Mid+1, Bracket). 
+bracket_run(_Parent, _Tid, _Mid, [], _Gpm)-> [];
+bracket_run(Parent, Tid, Mid, [{P1, bye}|Bracket], Gpm)->
+	spawn(game_manager, serve_game, [self(), P1, bye, Tid, Mid, Gpm]),
+	bracket_run(Parent, Tid, Mid+1, Bracket, Gpm); 
+bracket_run(Parent, Tid, Mid, [{P1, P2}|Bracket], Gpm)->
+	spawn(game_manager, serve_game, [self(), P1, P2, Tid, Mid, Gpm]),
+	bracket_run(Parent, Tid, Mid+1, Bracket, Gpm). 
 
 tournament_wait(Parent, Tid, NumPlayers, Gpm, Players, Pending) ->
     case length(Players) == NumPlayers of
