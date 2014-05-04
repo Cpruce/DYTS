@@ -53,7 +53,12 @@ manager_run(Tournaments, Players, PendingTournaments)->
             NewTourn = spawn(fun() ->
                         tournament_manager:tournament_start(Parent, Tid, NumPlayers, Gpm)
                 end),
-            
+            receive
+                {tournament_players, TPid, TPlayers}->
+                    ;
+                Other ->
+                    log("Error in tournament players message")
+            end, 
             manager_run(Tournaments, Players, [{Tid, Pid, NewTourn}|PendingTournaments]);
         {login, Pid, Username, {Username, Password}} ->
             case validate_password(Players, Username, Password) of
@@ -101,7 +106,8 @@ manager_run(Tournaments, Players, PendingTournaments)->
             Pending_ = [{Tid_, Requester_, Pid_} || {Tid_, Requester_, Pid_} <- PendingTournaments, Tid_ /= Tid],
             [Requester] = [Requester_ || {Tid_, Requester_, _Pid_} <- PendingTournaments, Tid_ == Tid],
             Requester ! {tournament_started, self(), {Tid, TPlayers, ok}},
-            manager_run([{Tid, in_progress, undefined, []}]++Tournaments, Players, Pending_);
+            NPlayers = new_tourn(Players, TPlayers),
+            manager_run([{Tid, in_progress, undefined, []}]++Tournaments, NPlayers, Pending_);
         {tournament_complete, Tid, Winner}->
             {WinnerR, PwdW, TokenW, PidW, {MwsW, MlsW, TpW, TwW}} =
             lists:keyfind(Winner, 1, Players),
@@ -157,6 +163,12 @@ manager_run(Tournaments, Players, PendingTournaments)->
             shared:log("Unparseable message: ~p", [Other]),
             manager_run(Tournaments, Players, PendingTournaments)
     end.
+
+new_tourn(Players, [])->
+    Players;
+new_tourn(Players, [{A,B,C,D,{Mws, Mls, Tp, Tws}}|TPlayers])->
+    new_tourn(lists:keyreplace(A, 1, Players, {A,B,C,D,{Mws,Mls,Tp+1,Tws}}),
+        TPlayers).
 
 % get # player names, using shuffle this time 
 get_n_players2(Players, N) ->
