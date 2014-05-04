@@ -52,6 +52,12 @@ tournament_run(Parent, Tid, Mid, NumPlayers, Gpm, [], Winners)->
 			log("~p won against ~p in match ~p in tournament ~p.", [Winner, Loser, RMid, Tid]),
 			Loser ! {end_tournament, Tid},
 			tournament_run(Parent, Tid, Mid, NumPlayers-1, Gpm, [], Winners++[Winner]);
+        {match_fault, Loser1, Loser2, RMid, Tid}->
+			log("Both ~p and ~p crashed or cheated too much in match ~p (tournament ~p)", [Loser1, Loser1, RMid, Tid]),
+			Loser1 ! {end_tournament, Tid},
+			Loser2 ! {end_tournament, Tid},
+			tournament_run(Parent, Tid, Mid, NumPlayers-1, Gpm, [], Winners++[bye]);
+
         {invalidate, Username} ->
             Winners_ = invalidate_user(Winners, Username),
             tournament_run(Parent, Tid, Mid, NumPlayers, Gpm, [], Winners_);
@@ -68,10 +74,10 @@ tournament_run(Parent, Tid, Mid, NumPlayers, Gpm, Bracket, Winners)->
 
 bracket_run(_Parent, _Tid, _Mid, [], _Gpm)-> [];
 bracket_run(Parent, Tid, Mid, [{P1, bye}|Bracket], Gpm)->
-	spawn(game_manager, serve_game, [self(), P1, bye, Tid, Mid, Gpm]),
+	spawn(game_manager, serve_match, [self(), P1, bye, Tid, Mid, Gpm]),
 	bracket_run(Parent, Tid, Mid+1, Bracket, Gpm); 
 bracket_run(Parent, Tid, Mid, [{P1, P2}|Bracket], Gpm)->
-	spawn(game_manager, serve_game, [self(), P1, P2, Tid, Mid, Gpm]),
+	spawn(game_manager, serve_match, [self(), P1, P2, Tid, Mid, Gpm]),
 	bracket_run(Parent, Tid, Mid+1, Bracket, Gpm). 
 
 tournament_wait(Parent, Tid, NumPlayers, Gpm, Players, Pending) ->
