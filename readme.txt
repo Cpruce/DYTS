@@ -38,4 +38,7 @@ yahtzee-manager is the outside proxy for its tournament-managers, all of which
 run individual tournaments. From that level, the game managers are spawned for
 each match.
 
+Deficiencies: Fault tolerance mid-game does not work, player is not very good.
+
+May have issues when players crash, but those haven't shown up for a while.
 

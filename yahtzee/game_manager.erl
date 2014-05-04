@@ -80,9 +80,20 @@ play_games(P1, P2, Tid, Mid, NumGame, P1Wins, P2Wins, Ties, Faults, Standard) ->
 serve_game(P1, P2, Tid, Gid, IsStandard) ->
     turn(1, P1, P2, [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0], [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0], [], [], Tid, Gid, IsStandard).
 
-get_score([T])-> T * 100;
-get_score([Box|ScoreCard]) ->
-	Box+get_score(ScoreCard).
+get_score2([T])-> T * 100;
+get_score2([Box|ScoreCard]) ->
+	Box+get_score2(ScoreCard).
+
+get_score(S) ->
+    Bonus = case lists:sum([lists:nth(X, S) || X <- lists:seq(1,6)]) >= 63 of
+        true ->
+            35;
+        false ->
+            0
+    end,
+    Bonus + get_score2(S).
+
+
 
 % Game over, check winner
 check_winner(P1ScoreCard, P2ScoreCard)->
@@ -348,6 +359,42 @@ score_round([R1, R2, R3, R4, R5], chance, _ScoreCard)->
 	Sum = R1 + R2 + R3 + R4 + R5,
 	log("Chance. Sum is ~p.", [Sum]),
     Sum;
+score_round([X, X, X, X, X], full_house, ScoreCard) ->
+    case lists:nth(X, ScoreCard) of
+        -1 ->
+            case lists:nth(12, ScoreCard) of
+                50 ->
+                    log("Special joker!"),
+                    25;
+                _ ->
+                    0
+            end;
+        _ -> 0
+    end;
+score_round([X, X, X, X, X], sstraight, ScoreCard) ->
+    case lists:nth(X, ScoreCard) of
+        -1 ->
+            case lists:nth(12, ScoreCard) of
+                50 ->
+                    log("Special joker!"),
+                    30;
+                _ ->
+                    0
+            end;
+        _ -> 0
+    end;
+score_round([X, X, X, X, X], lstraight, ScoreCard) ->
+    case lists:nth(X, ScoreCard) of
+        -1 ->
+            case lists:nth(12, ScoreCard) of
+                50 ->
+                    log("Special joker!"),
+                    40;
+                _ ->
+                    0
+            end;
+        _ -> 0
+    end;
 score_round(_, Pattern, _) ->
     log("Did not match ~p with pattern.", [Pattern]),
     0.
