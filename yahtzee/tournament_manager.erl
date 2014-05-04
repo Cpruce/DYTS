@@ -52,7 +52,8 @@ tournament_run(Parent, Tid, Mid, NumPlayers, Gpm, [], Winners)->
 		{match_over, Winner, Loser, RMid, Tid}->
 			log("~p won against ~p in match ~p in tournament ~p.", [Winner, Loser, RMid, Tid]),
 			Loser ! {end_tournament, Tid},
-			tournament_run(Parent, Tid, Mid, NumPlayers-1, Gpm, [], Winners++[Winner]);
+            Parent ! {match_results, self(), Winner, Loser},
+            tournament_run(Parent, Tid, Mid, NumPlayers-1, Gpm, [], Winners++[Winner]);
         {match_fault, Loser1, Loser2, RMid, Tid}->
 			log("Both ~p and ~p crashed or cheated too much in match ~p (tournament ~p)", [Loser1, Loser1, RMid, Tid]),
 			Loser1 ! {end_tournament, Tid},
