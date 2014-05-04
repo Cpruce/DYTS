@@ -92,8 +92,9 @@ tournament_wait(Parent, Tid, NumPlayers, Gpm, Players, Pending) ->
     receive
         % internal
         {add_players, New} ->
-            send_to_each(New, start_tournament, Tid),
-            tournament_wait(Parent, Tid, NumPlayers, Gpm, Players, Pending ++ New);
+            NewUniq = New -- (Pending ++ Players),
+            send_to_each(NewUniq, start_tournament, Tid),
+            tournament_wait(Parent, Tid, NumPlayers, Gpm, Players, Pending ++ NewUniq);
         {invalidate, Username} ->
             case is_ready(Players, Username) of
                 true ->
@@ -132,7 +133,7 @@ tournament_wait(Parent, Tid, NumPlayers, Gpm, Players, Pending) ->
                     Parent ! {request_players, self(), 1},
                     tournament_wait(Parent, Tid, NumPlayers, Gpm, Players, Pending)
             end
-    after 10000 ->
+    after 1000 ->
 	    Parent ! {request_players, self(), NumPlayers - length(Players)},
             tournament_wait(Parent, Tid, NumPlayers, Gpm, Players, [])
     end.
