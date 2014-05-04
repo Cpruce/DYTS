@@ -33,7 +33,7 @@ bracket_setup(Parent, Tid, Mid, NumPlayers, Gpm, [P1,P2|Players], Bracket)->
 tournament_run(Parent, Tid, Mid, NumPlayers, Gpm, [], Winners)->
 	case length(Winners) == 1 of
 		true ->
-			log("Tournament over, the winner is ~p!~n", [hd(Winners)]),
+			log("Tournament over, the winner is ~p!", [hd(Winners)]),
 			hd(Winners) ! {end_tournament, Tid},
 			Parent ! {tournament_complete, Tid, hd(Winners)},
 			halt();
@@ -42,14 +42,14 @@ tournament_run(Parent, Tid, Mid, NumPlayers, Gpm, [], Winners)->
 	end,
 	case length(Winners) == NumPlayers of
 		true ->
-			log("Initiating another round of elimination.~n"),
+			log("Initiating another round of elimination."),
 		    	bracket_setup(Parent, Tid, Mid, NumPlayers, Gpm, Winners, []);
 		false ->
-			log("Waiting for more matches to end.~n")
+			log("Waiting for more matches to end.")
 	end,
 	receive
 		{match_over, Winner, Loser, RMid, Tid}->
-			log("~p won against ~p in match ~p in tournament ~p.~n", [Winner, Loser, RMid, Tid]),
+			log("~p won against ~p in match ~p in tournament ~p.", [Winner, Loser, RMid, Tid]),
 			Loser ! {end_tournament, Tid},
 			tournament_run(Parent, Tid, Mid, NumPlayers-1, Gpm, [], Winners++[Winner]);
         {invalidate, Username} ->
@@ -60,10 +60,10 @@ tournament_run(Parent, Tid, Mid, NumPlayers, Gpm, [], Winners)->
             tournament_run(Parent, Tid, Mid, NumPlayers, Gpm, [], Winners_);
 
 		Other ->
-			log("Received something unparseable. ~p~n", [Other])
+			log("Received something unparseable. ~p", [Other])
 	end;
 tournament_run(Parent, Tid, Mid, NumPlayers, Gpm, Bracket, Winners)->
-	spawn(tournament_manager, bracket_run, [Parent, Tid, Mid, Bracket]),
+    spawn(fun() -> bracket_run(Parent, Tid, Mid, Bracket) end),
 	tournament_run(Parent, Tid, Mid+length(Bracket), NumPlayers, Gpm, [], Winners).	
 
 bracket_run(_Parent, _Tid, _Mid, [])-> [];
@@ -77,11 +77,12 @@ bracket_run(Parent, Tid, Mid, [{P1, P2}|Bracket])->
 tournament_wait(Parent, Tid, NumPlayers, Gpm, Players, Pending) ->
     case length(Players) == NumPlayers of
 	    true ->
-		    log("The required number of players have joined. Tournament ~p about to start.~n", [Tid]),
-		    Parent ! {tournament_begin, self(), Tid},
+		    log("The required number of players have joined. Tournament ~p about to start.", [Tid]),
+            PlayerNames = [Username || {Username, _, _} <- Players],
+		    Parent ! {tournament_begin, self(), Tid, PlayerNames},
 		    bracket_setup(Parent, Tid, 0, NumPlayers, Gpm, Players, []);
 	    false ->
-		    log("Waiting for players to join.~n")
+		    log("Waiting for players to join.")
     end,
     receive
         % internal

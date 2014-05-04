@@ -32,7 +32,7 @@ main(Params)->
     net_kernel:start([EName, shortnames]),
     log("name is ~p", [Name]),
     register(yahtzee_manager, self()),
-    log("node() is ~p~n", [node()]),
+    log("node() is ~p", [node()]),
     % Start with no active tournament managers, and zero players.
     manager_run([], [], []).
 
@@ -76,7 +76,8 @@ manager_run(Tournaments, Players, PendingTournaments)->
                 error ->
                     log("New player; don't have to tell anyone they're back.")
             end,
-            spawn(fun() -> monitor_player(Username, Pid, self()) end),
+            ParentPid = self(),
+            spawn(fun() -> monitor_player(Username, Pid, ParentPid) end),
             % log_in will add the player if they don't exist, and update them if they do.
             Players_ = log_in(Players, Username, Password, Token, Pid),
             log("players: ~p", Players_),
@@ -93,9 +94,12 @@ manager_run(Tournaments, Players, PendingTournaments)->
             Pid ! {add_players, TournPlayers_},
             log("Sent: ~p", [TournPlayers_]),
             manager_run(Tournaments, Players, PendingTournaments);
-        {tournament_begin, _Pid, Tid} ->
+        {tournament_begin, _Pid, Tid, TPlayers} ->
             log("Tournament ~p has begun.~n"),
-            manager_run([{Tid, in_progress, undefined, []}]++Tournaments, Players, PendingTournaments--lists:keyfind(Tid, 1, PendingTournaments));
+            Pending_ = [{Tid_, Requester_, Pid_} || {Tid_, Requester_, Pid_} <- PendingTournaments, Tid_ /= Tid],
+            [Requester] = [Requester_ || {Tid_, Requester_, _Pid_} <- PendingTournaments, Tid_ == Tid],
+            Requester ! {tournament_started, self(), {Tid, TPlayers, ok}},
+            manager_run([{Tid, in_progress, undefined, []}]++Tournaments, Players, Pending_);
         {tournament_complete, Tid, Winner}->
             manager_run(lists:keyreplace(Tid, 1, Tournaments, {Tid, complete, Winner, []}), Players, PendingTournaments);
         {tournament_info, Pid, Tid}->
@@ -115,7 +119,7 @@ manager_run(Tournaments, Players, PendingTournaments)->
                     Pid ! {tournament_status, self(), Tourn},
                     manager_run(Tournaments, Players, PendingTournaments)
             end;
-        {_, missing, Username} ->
+        {_Pid, missing, Username} ->
             shared:log("Player ~p has vanished.", [Username]),
             send_all_tm(Tournaments, {invalidate, Username}),
             Players_ = log_out(Players, Username),
@@ -184,14 +188,17 @@ send_all_tm([{_, Pid, _, _}|T], M) ->
 % monitor players to make sure they are still in the game
 monitor_player(Name, Pid, ParentPid) -> 
 	erlang:monitor(process, Pid), %{RegName, Node}
+    log("Monitoring player ~p @ ~p for parent ~p", [Name, Pid, ParentPid]), 
 	receive
 	
 		{'DOWN', _Ref, process, _Pid, normal} ->
 
+            log("Normal"),
 			ParentPid ! {self(), normal, Name};
 
 		{'DOWN', _Ref, process, _Pid, _Reason} ->
 
+            log("User ~p down!", [Name]),
 			ParentPid ! {self(), missing, Name}
 	
 	end.

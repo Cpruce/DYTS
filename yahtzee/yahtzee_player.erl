@@ -101,7 +101,7 @@ logged_in(Name, Pwd, TM, Ticket, Tournaments)->
         % Data is a single tournament identifier
         {start_tournament, Pid, Name, Tid} ->
             log("Received notification that tournament ~p is starting.~n", [Tid]),
-            Pid ! {accept_tournament, Name, Pwd, {Tid, Ticket}},
+            Pid ! {accept_tournament, self(), Name, {Tid, Ticket}},
             logged_in(Name, Pwd, TM, Ticket, Tournaments++[Tid]);
         {end_tournament, _, Name, Tid} ->
             log("Received notification that tournament ~p is ending.~n", [Tid]),
@@ -117,7 +117,7 @@ logged_in(Name, Pwd, TM, Ticket, Tournaments)->
                 false ->
                     ScoreCardLine = 0
             end,
-            Pid ! {play_action, self(), {Ref, Tid, Gid, RollNum, Keepers, ScoreCardLine}},
+            Pid ! {play_action, self(), Name, {Ref, Tid, Gid, RollNum, Keepers, ScoreCardLine}},
             logged_in(Name, Pwd, TM, Ticket, Ticket);
         {Type, Pid, Name, Data} ->
             log("Received unknown message of type ~p from ~p containing ~p", [Type, Pid, Data]),
