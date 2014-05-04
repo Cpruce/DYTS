@@ -86,8 +86,7 @@ manager_run(Tournaments, Players, PendingTournaments)->
             shared:log("Pid ~p tried to log in as user ~p, but provided authentication for "
                 "user ~p", [Pid, Username, Username_]),
             manager_run(Tournaments, Players, PendingTournaments);
-    	{request_players, Pid, StrNumPlayers}->
-            NumPlayers = list_to_integer(StrNumPlayers),
+    	{request_players, Pid, NumPlayers}->
             EligPlayers = [Player || Player <- Players, element(4, Player) /= logged_out],
             log("Pid ~p asked for ~p players with ~p eligible players.", [Pid,
                     NumPlayers, length(EligPlayers)]),
