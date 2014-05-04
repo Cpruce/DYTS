@@ -86,9 +86,11 @@ manager_run(Tournaments, Players, PendingTournaments)->
             shared:log("Pid ~p tried to log in as user ~p, but provided authentication for "
                 "user ~p", [Pid, Username, Username_]),
             manager_run(Tournaments, Players, PendingTournaments);
-    	{request_players, Pid, NumPlayers}->
-            log("Pid ~p asked for ~p players.~n", [Pid, NumPlayers]),
+    	{request_players, Pid, StrNumPlayers}->
+            NumPlayers = list_to_integer(StrNumPlayers),
             EligPlayers = [Player || Player <- Players, element(4, Player) /= logged_out],
+            log("Pid ~p asked for ~p players with ~p eligible players.", [Pid,
+                    NumPlayers, length(EligPlayers)]),
             TournPlayers = get_n_players(EligPlayers, NumPlayers, []),
             TournPlayers_ = [{Player, PPid, Token} || {Player, _, Token, PPid, _} <- TournPlayers],
             Pid ! {add_players, TournPlayers_},
@@ -144,7 +146,7 @@ get_n_players(Players, N, Acc) ->
 	RandPlayer = lists:nth(crypto:rand_uniform(1, length(Players)), Players),
 	case lists:member(RandPlayer, Acc) of
 		true ->
-			get_n_players(Players, N, Acc);
+			get_n_players(Players, N-1, Acc);
 		false ->
 			get_n_players(Players, N-1, [RandPlayer]++Acc)
 	end.
