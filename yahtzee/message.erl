@@ -17,4 +17,5 @@ main(Params)->
     RegName = hd(tl(tl(tl(Params)))),
     SendName = list_to_atom(RegName), 
     Message = list_to_atom(AtomStr), 
-    {yahtzee_manager, SendName} ! {Message, self(),{NumPlayers, Gpm}}.
+    {yahtzee_manager, SendName} ! {Message,
+        self(),{list_to_integer(NumPlayers), list_to_integer(Gpm)}}.

@@ -20,8 +20,8 @@
 % Run a full tournament with the given list of players, reporting results
 % back to the Parent pid.
 tournament_start(Parent, Tid, NumPlayers, Gpm) ->
-    Parent ! {request_players, self(), list_to_integer(NumPlayers)},
-    tournament_wait(Parent, Tid, list_to_integer(NumPlayers), Gpm, [], []).
+    Parent ! {request_players, self(), NumPlayers},
+    tournament_wait(Parent, Tid, NumPlayers, Gpm, [], []).
 
 bracket_setup(Parent, Tid, Mid, NumPlayers, Gpm, [], Bracket)->
 	tournament_run(Parent, Tid, Mid, NumPlayers, Gpm, Bracket, []);
